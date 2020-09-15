@@ -6,6 +6,7 @@ Version          Author          CreatedOn          ModifiedOn          Remarks
 ------------ --------------- ------------------ -------------------  -----------------------------------------------------
 1.0		  SSK		                   20/08/2016         Introducing Leave Encashment Logic
 2.0               SHIV                             09/02/2018         Taking care balance for back dated leave applications
+2.0.190225        SHIV                             25/02/2019         ticket#1422: `status` field updation on cancel
 --------------------------------------------------------------------------------------------------------------------------                                                                          
 '''
 from __future__ import unicode_literals
@@ -35,8 +36,17 @@ class LeaveApplication(Document):
 	def get_status(self):
 		if self.workflow_state == "Rejected":
 			self.status = "Rejected"
-		if self.workflow_state == "Approved":
-			self.status= "Approved"	
+		elif self.workflow_state == "Approved":
+			if self.docstatus == 1:
+				self.status = "Approved"
+			else:
+				self.workflow_state = "Waiting Approval"
+		elif self.workflow_state == "Cancelled":
+                        if frappe.session.user not in (self.leave_approver,"Administrator"):
+                                frappe.throw(_("Only leave approver <b>{0}</b> ( {1} ) can cancel this document.").format(self.leave_approver_name, self.leave_approver), title="Operation not permitted")
+                        self.status = "Cancelled"
+                else:
+                        pass
 
 	"""def get_feed(self):
 		return _("{0}: From {0} of type {1}").format(self.status, self.employee_name, self.leave_type)
@@ -90,14 +100,18 @@ class LeaveApplication(Document):
 			immediate_sp = frappe.db.get_value("Employee", frappe.db.get_value("Employee", self.employee, "reports_to"), "user_id")
 			if str(immediate_sp) != str(self.leave_approver):
 				self.notify_supervisor()
+			self.update_cf_entry('Submit')
 		self.update_for_backdated_applications()
 
+        def before_cancel(self):
+                self.get_status()
+                
 	def on_cancel(self):
 		# notify leave applier about cancellation
 		self.notify_employee("cancelled")
 		self.cancel_attendance()
 		self.update_for_backdated_applications()
-
+		self.update_cf_entry('Cancel')
         # ++++++++++++++++++++ Ver 2.0 BEGINS ++++++++++++++++++++
         # Following methods created by SHIV on 2018/02/12
         def validate_backdated_applications(self):
@@ -386,6 +400,27 @@ class LeaveApplication(Document):
                         if str(self.from_date)[0:4] != str(self.to_date)[0:4]:
                                 frappe.throw("Leave Application cannot overlap fiscal years")
 
+
+	#update Carry Forward Transaction
+        #only if leave_type = 'Casual Leave'
+        def update_cf_entry(self, action):
+                leave_days = 0.0
+                if action == 'Submit':
+                        leave_days = self.total_leave_days
+
+                if action == 'Cancel':
+                        leave_days = -1 * self.total_leave_days
+
+                cf = frappe.db.sql(""" select p.name from `tabCarry Forward Entry` p, `tabCarry Forward Item` c where c.parent = p.name 
+                                 and c.employee = '{0}' and (p.fiscal_year = '{1}' or p.fiscal_year = '{2}') and p.docstatus = 1
+                                 """.format(self.employee,  getdate(self.from_date).year, getdate(self.to_date).year), frappe._dict())
+                c = cf and cf[0] or 0.0
+                if cf:
+                        frappe.db.sql(""" update `tabCarry Forward Item` set leaves_taken = leaves_taken + {0}, 
+                                leave_balance = leaves_allocated - leaves_taken  where parent = '{1}' and employee = '{2}'
+                                """.format(leave_days, c[0], self.employee))
+
+
 def daterange(start_date, end_date):
     for n in range(int ((date(end_date) - date(start_date)).days)):
 	yield date(start_date) + timedelta(n)
@@ -440,6 +475,8 @@ def get_number_of_leave_days(employee, leave_type, from_date, to_date, half_day=
 
 	if not frappe.db.get_value("Leave Type", leave_type, "include_holiday"):
 		number_of_days = flt(number_of_days) - flt(get_holidays(employee, from_date, to_date))
+	else:
+		return number_of_days
 
 	d = from_date
 	half = frappe.db.get_value("Holiday List", get_holiday_list_for_employee(employee), "saturday_half")
@@ -485,17 +522,36 @@ def get_leave_balance_on(employee, leave_type, ason_date, allocation_records=Non
 	#return flt(allocation.total_leaves_allocated) - flt(leaves_taken) - flt(leaves_encashed)
         '''
 
-        allocation   = get_leave_allocation_records(ason_date, employee).get(employee, frappe._dict()).get(leave_type, frappe._dict())
+         #leaves carry forwarded from CL to EL
+
+        carry_forward = frappe.db.sql(""" select c.employee, c.leave_balance,  p.fiscal_year from `tabCarry Forward Entry` p, 
+                        `tabCarry Forward Item` c where c.parent = p.name and p.docstatus = 1 and p.leave_type = 'Casual Leave' 
+                        and {0}-fiscal_year = 1 and c.employee = '{1}' and p.docstatus = 1 
+                        order by fiscal_year desc limit 1""".format(getdate(ason_date).year, employee), frappe._dict())
+        leaves = 0.0
+        if carry_forward:
+                if leave_type == 'Casual Leave':
+                        leaves = carry_forward and -1* carry_forward[0][1] or 0.0
+                elif leave_type == 'Earned Leave':
+                        leaves = carry_forward and carry_forward[0][1] or 0.0
+                else:
+                        leaves = 0.0
+
+	allocation   = get_leave_allocation_records(ason_date, employee).get(employee, frappe._dict()).get(leave_type, frappe._dict())
         balance      = 0
         
         if allocation:
                 leaves_taken = get_approved_leaves_for_period(employee, leave_type, allocation.from_date, ason_date)
-                balance      = flt(allocation.total_leaves_allocated) - flt(leaves_taken)
-                
+		if leave_type == "Medical Leave":
+			frappe.msgprint(str(leaves_taken))
+                balance      = flt(allocation.total_leaves_allocated) - flt(leaves_taken) + flt(leaves)
+                if balance <= 0:
+                        balance = flt(allocation.total_leaves_allocated) - flt(leaves_taken)
+
                 if leave_type == 'Earned Leave':
                         #le = get_le_settings()         # Line commented by SHIV on 2018/10/12
                         le = frappe.get_doc("Employee Group",frappe.db.get_value("Employee",employee,"employee_group")) # Line added by SHIV on 2018/10/12
-                        if flt(flt(allocation.total_leaves_allocated) - flt(leaves_taken)) > flt(le.encashment_lapse):
+                        if flt(flt(allocation.total_leaves_allocated) - flt(leaves_taken)) + flt(leaves) > flt(le.encashment_lapse):
                                 balance = flt(le.encashment_lapse)
         else:
                 balance = 0
@@ -789,8 +845,11 @@ def add_holidays(events, start, end, employee, company):
 				"name": holiday.name
 			})
 
+# Ver 2.0.19025, commented by SHIV on 25/02/2019 
+'''
 def check_cancelled_leaves():
 	ls = frappe.db.sql("select name from `tabLeave Application` where docstatus = 2 and status != 'Cancelled'", as_dict=True)
 	for l in ls:
 		doc = frappe.get_doc("Leave Application", l.name)
 		doc.db_set("status", "Cancelled")
+'''

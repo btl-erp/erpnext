@@ -44,6 +44,8 @@ class PurchaseInvoice(BuyingController):
 
 	def validate(self):
 		check_future_date(self.posting_date)
+		self.set_status()
+		self.adjust_add_ded()
 		if not self.buying_cost_center:
 			frappe.throw("Buying Cost Center is Mandatory")
 		if not self.is_opening:
@@ -80,6 +82,18 @@ class PurchaseInvoice(BuyingController):
 		self.validate_fixed_asset()
 		self.validate_fixed_asset_account()
 		self.create_remarks()
+
+	def set_status(self):
+                self.status = {
+                        "0": "Draft",
+                        "1": "Submitted",
+                        "2": "Cancelled"
+                }[str(self.docstatus or 0)]
+
+	def adjust_add_ded(self):
+                self.total_add_ded = flt(self.freight_and_insurance_charges) - flt(self.discount) + flt(self.tax) + flt(self.other_charges)
+                self.discount_amount = -1 * flt(self.total_add_ded)
+	
 
 	def validate_tds(self):
 		if not self.type:
@@ -283,6 +297,7 @@ class PurchaseInvoice(BuyingController):
 						.format(item.purchase_receipt))
 
 	def on_submit(self):
+		self.check_po_closed()
 		self.check_prev_docstatus()
 		self.update_status_updater_args()
 
@@ -309,6 +324,12 @@ class PurchaseInvoice(BuyingController):
 		self.update_fixed_asset()
 		self.consume_budget()
 		self.update_rrco_receipt()
+
+	def check_po_closed(self):
+                for a in self.items:
+                        if a.purchase_order:
+                                if frappe.db.get_value("Purchase Order", a.purchase_order, "status") == "Closed":
+                                        frappe.throw("Cannot modify closed purchase order")
 
 	def update_fixed_asset(self):
 		for d in self.get("items"):
@@ -546,6 +567,7 @@ class PurchaseInvoice(BuyingController):
 			gl_entries.append(
 				self.get_gl_dict({
 					"account": self.credit_to,
+					#"cost_center": self.buying_cost_center,
 					"party_type": "Supplier",
 					"party": self.supplier,
 					"against": self.cash_bank_account,
@@ -769,8 +791,8 @@ class PurchaseInvoice(BuyingController):
 	def consume_budget(self):
 		for item in self.get("items"):
 			expense, cost_center = frappe.db.get_value("Purchase Order Item", item.po_detail, ["budget_account", "cost_center"])
-			if expense != item.expense_account and cost_center != item.cost_center:
-				frappe.throw("Purchase Order and Invoice should have same Cost Center and Budget Account!")
+			if cost_center != item.cost_center:
+				frappe.throw("Purchase Order and Invoice should have same Cost Center")
 			if expense:
 				account_type = frappe.db.get_value("Account", expense, "account_type")
 				if account_type in ("Fixed Asset", "Expense Account"):

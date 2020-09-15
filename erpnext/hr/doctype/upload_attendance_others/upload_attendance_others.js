@@ -22,7 +22,7 @@ erpnext.hr.MRAttendanceControlPanel = frappe.ui.form.Controller.extend({
 		window.location.href = repl(frappe.request.url +
 			'?cmd=%(cmd)s&fiscal_year=%(fiscal_year)s&month=%(month)s&branch=%(branch)s', {
 				cmd: "erpnext.hr.doctype.upload_attendance_others.upload_attendance_others.get_template",
-				branch: this.frm.doc.branch,
+				branch: encodeURIComponent(this.frm.doc.branch),
 				fiscal_year: this.frm.doc.fiscal_year,
 				month: this.frm.doc.month,
 			});
@@ -43,6 +43,8 @@ erpnext.hr.MRAttendanceControlPanel = frappe.ui.form.Controller.extend({
 				var $log_wrapper = $(cur_frm.fields_dict.import_log.wrapper).empty();
 
 				if(!r.messages) r.messages = [];
+				//console.log(r.exc);
+				//console.log(r.error);
 				// replace links if error has occured
 				if(r.exc || r.error) {
 					r.messages = $.map(r.message.messages, function(v) {

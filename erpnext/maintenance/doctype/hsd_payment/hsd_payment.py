@@ -11,8 +11,16 @@ from erpnext.custom_utils import prepare_gl, check_future_date
 class HSDPayment(Document):
 	def validate(self):
 		check_future_date(self.posting_date)
+		self.set_status()
 		self.validate_allocated_amount()
 		self.clearance_date = None
+
+	def set_status(self):
+                self.status = {
+                        "0": "Draft",
+                        "1": "Submitted",
+                        "2": "Cancelled"
+                }[str(self.docstatus or 0)]
 
 	def validate_allocated_amount(self):
 		if not self.amount > 0:
@@ -57,8 +65,8 @@ class HSDPayment(Document):
 					doc.db_set("paid_amount", flt(doc.paid_amount) - flt(a.allocated_amount))
 					doc.db_set("outstanding_amount", flt(doc.outstanding_amount) + flt(a.allocated_amount))	
 				else:
-					paid_amount = flt(doc.paid_amount) + flt(a.allocated_amount)
-					if paid_amount > flt(doc.total_amount):
+					paid_amount = round(flt(doc.paid_amount) + flt(a.allocated_amount), 2)
+					if flt(paid_amount) > flt(doc.total_amount):
 						frappe.throw("Paid Amount cannot be greater than the Total Amount for Receive POl <b>"+str(a.pol)+"</b>")
 					doc.db_set("paid_amount", paid_amount)
 					doc.db_set("outstanding_amount", a.balance_amount)	

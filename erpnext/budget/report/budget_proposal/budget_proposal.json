@@ -7,7 +7,7 @@
  "doctype": "Report", 
  "idx": 0, 
  "is_standard": "Yes", 
- "modified": "2018-08-06 21:13:28.090819", 
+ "modified": "2019-11-12 12:21:38.107202", 
  "modified_by": "Administrator", 
  "module": "Budget", 
  "name": "Budget Proposal", 
@@ -24,6 +24,12 @@
   }, 
   {
    "role": "Budget User"
+  }, 
+  {
+   "role": "Auditor"
+  }, 
+  {
+   "role": "HR Manager"
   }
  ]
 }

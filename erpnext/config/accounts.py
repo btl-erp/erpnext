@@ -220,6 +220,13 @@ def get_data():
 					"description": "Enter RRCO Receipts in Bulk",
 					"hide_count": True
 				},
+				{
+                                        "type": "doctype",
+                                        "name": "RRCO Receipt Modifier",
+                                        "description": "Enter RRCO Receipts Modification",
+                                        "hide_count": True
+                                },
+
                                 {
 					"type": "doctype",
 					"name": "Salary Remittance",
@@ -276,6 +283,14 @@ def get_data():
 					"doctype": "Payment Entry",
 					"is_query_report": True
 				},
+				 {
+                                        "type": "report",
+                                        "name": "Money Receipt Issued",
+                                        "label": "Money Receipt Register",
+                                        "doctype": "Payment Entry",
+                                        "is_query_report": True
+                                },
+
 			]
 		},
 		{
@@ -351,7 +366,13 @@ def get_data():
 					"name": "Intra Company Report",
 					"doctype": "GL Entry",
 					"is_query_report": True,
-				}
+				},
+				{
+                                        "type": "report",
+                                        "name": "Inter Company Transaction Report",
+                                        "doctype": "Account",
+                                        "is_query_report": True,
+                                },
 			]
 		},
 		{
@@ -522,7 +543,7 @@ def get_data():
                                 {
 					"type": "report",
 					"is_query_report": True,
-					"name": "GIS Report",
+					"name": "New GIS Report",
                                         "label": _("GIS Report"),
 					"doctype": "Salary Slip"
 				},

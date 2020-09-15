@@ -7,7 +7,7 @@
  "doctype": "Report", 
  "idx": 0, 
  "is_standard": "Yes", 
- "modified": "2018-07-11 09:28:18.799340", 
+ "modified": "2019-04-12 10:22:11.890931", 
  "modified_by": "kinzang.namgyal@cdcl.bt", 
  "module": "HR", 
  "name": "Summarized Salary Report", 
@@ -33,6 +33,12 @@
   }, 
   {
    "role": "Auditor"
+  }, 
+  {
+   "role": "Regional Manager"
+  }, 
+  {
+   "role": "HR Support"
   }
  ]
 }

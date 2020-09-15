@@ -11,7 +11,11 @@ from frappe.utils.data import get_first_day, get_last_day, add_days
 
 class MusterRollEmployee(Document):
 	def validate(self):
-		self.calculate_rates()
+		self.cal_rates()
+		if len(self.musterroll) > 1:
+			for a in range(len(self.musterroll)-1):
+				self.musterroll[a].to_date = frappe.utils.data.add_days(getdate(self.musterroll[a + 1].from_date), -1)
+		#self.calculate_rates()
 		self.check_status()
 		self.populate_work_history()
 		self.update_user_permissions()
@@ -34,6 +38,11 @@ class MusterRollEmployee(Document):
 	def calculate_rates(self):
 		if not self.rate_per_hour:
 			self.rate_per_hour = (flt(self.rate_per_day) * 1.5) / 8
+	def cal_rates(self):
+        	for a in self.get('musterroll'):
+			if a.rate_per_day:
+				a.rate_per_hour = flt(a.rate_per_day * 1.5) / 8
+	
 
 	def check_status(self):
                 if self.status == "Left" and self.separation_date:
@@ -89,7 +98,7 @@ class MusterRollEmployee(Document):
                                                                 
                                                         wh.to_date = wh.from_date if add_days(getdate(self.date_of_transfer),-1) < getdate(wh.from_date) else add_days(self.date_of_transfer,-1)
                                                 
-                        if (self.cost_center != prev_doc.cost_center):
+                        if ((self.cost_center != prev_doc.cost_center) or (prev_doc.status == 'Left' and self.status == 'Active')):
                                 self.append("internal_work_history",{
                                                 "branch": self.branch,
                                                 "cost_center": self.cost_center,

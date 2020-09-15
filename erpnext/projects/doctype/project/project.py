@@ -12,6 +12,7 @@ Version          Author          CreatedOn          ModifiedOn          Remarks
 2.0               SHIV                              07/06/2018         * Allowing role "Project Committee" to change
                                                                          Branch and Cost Center.
                                                                          Method: validate_branch_change
+2.0.190402        SHIV                              2019/04/02         * Refined                                                                         
 --------------------------------------------------------------------------------------------------------------------------                                                                          
 '''
 
@@ -70,10 +71,13 @@ class Project(Document):
 			from `tabTimesheet Detail` where project=%s and docstatus < 2 group by description
 			order by total_days desc''', self.name, as_dict=True))
                 # +++++++++++++++++++++ Ver 2.0 ENDS +++++++++++++++++++++
-        
+
+        # Commented by SHIV on 2019/01/30, it seems is calling onload twice
+        '''
 	def __setup__(self):
 		self.onload()
-
+        '''
+        
 	def validate(self):
 		self.validate_dates()
 		self.validate_branch_cc()
@@ -106,6 +110,8 @@ class Project(Document):
 		self.send_welcome_email()
 
 	def validate_branch_cc(self):
+                if self.flags.dont_sync_tasks: return
+                
 		if self.cost_center != get_branch_cc(self.branch):
 			frappe.throw("Project\'s branch and cost center doesn't belong to each other")
 
@@ -130,6 +136,8 @@ class Project(Document):
 		# +++++++++++++++++++++ Ver 2.0 ENDS +++++++++++++++++++++
 
         def validate_branch_change(self):
+                if self.flags.dont_sync_tasks: return
+                
                 if self.branch != self.get_db_value("branch"):
                         for doctype in ["Project Advance", "Project Invoice"]:
                                 for t in frappe.get_all(doctype, ["name"], {"project": self.name, "docstatus":("<",2)}):
@@ -137,6 +145,8 @@ class Project(Document):
                                         frappe.throw(_("Change of branch not permitted.<br>{0}").format(msg),title="Dependencies found")
 
         def update_branch_change(self):
+                if self.flags.dont_sync_tasks: return
+                
                 for doctype in ["MB Entry", "BOQ Adjustment", "BOQ", "Timesheet", "Task"]:
                         for t in frappe.get_all(doctype, ["name"], {"project": self.name}):
                                 doc = frappe.get_doc(doctype, t.name)
@@ -155,6 +165,8 @@ class Project(Document):
                 }[str(self.status) or "Planning"]
 
         def validate_imprest(self):
+                if self.flags.dont_sync_tasks: return
+                
                 if flt(self.imprest_limit) < 0:
                         frappe.throw(_("Imprest Limit cannot be a negative value."),title="Invalid Value")
                         
@@ -166,6 +178,8 @@ class Project(Document):
         
         # ++++++++++++++++++++ Ver 2.0 BEGINS ++++++++++++++++++++
         def validate_target_quantity(self):
+                if self.flags.dont_sync_tasks: return
+                
                 for task in self.activity_tasks:
                         prev_value = frappe.db.get_value("Task", task.task_id, "target_quantity")
                         
@@ -211,6 +225,8 @@ class Project(Document):
                                         frappe.throw("Row# {0} : Cannot change `Target Quantity/Value` for Tasks already having active Timesheets. <br/>{1}".format(task.idx, msg))
                                         
         def validate_work_quantity(self):
+                if self.flags.dont_sync_tasks: return
+                
                 for task in self.activity_tasks:
                         prev_value = frappe.db.get_value("Task", task.task_id, "work_quantity")
                         
@@ -256,6 +272,8 @@ class Project(Document):
                                         frappe.throw("Row# {0} : Cannot change `Target Work Quantity` for Tasks already having active Timesheets. <br/>{1}".format(task.idx, msg))
                                         
         def update_task_progress(self):
+                if self.flags.dont_sync_tasks: return
+                
                 task_list = frappe.db.sql("""
                                 select name
                                 from `tabTask`
@@ -284,6 +302,8 @@ class Project(Document):
                                 """.format(flt(values.target_quantity_complete), flt(values.work_quantity_complete), task.name))
 
         def update_project_progress(self):
+                if self.flags.dont_sync_tasks: return
+                
                 # Following code added by SHIV on 2017/08/16
 		total = frappe.db.sql("""
                                 select
@@ -360,6 +380,8 @@ class Project(Document):
                 # +++++++++++++++++++++ Ver 2.0 ENDS +++++++++++++++++++++                
 
         def update_group_tasks(self):
+                if self.flags.dont_sync_tasks: return
+                
                 # Activity Tasks
                 group_list = frappe.db.sql("""
                                         select t1.name, t1.task_idx, t1.subject, t1.is_group,
@@ -618,6 +640,8 @@ class Project(Document):
 		return frappe.get_all("Task", "*", {"project": self.name}, order_by="exp_start_date asc")
 
 	def validate_dates(self):
+                if self.flags.dont_sync_tasks: return
+                
 		if self.expected_start_date and self.expected_end_date:
 			if getdate(self.expected_end_date) < getdate(self.expected_start_date):
 				frappe.throw(_("Expected End Date can not be less than Expected Start Date"))
@@ -781,8 +805,8 @@ class Project(Document):
 			task_names.append(task.name)
 
 		# delete
-		for t in frappe.get_all("Task", ["name"], {"project": self.name, "name": ("not in", task_names), "additional_task": 0}):
-			frappe.delete_doc("Task", t.name)
+                for t in frappe.get_all("Task", ["name"], {"project": self.name, "name": ("not in", task_names), "additional_task": 0}):
+                        frappe.delete_doc("Task", t.name)
 
 		self.update_percent_complete()
 		self.update_costing()
@@ -790,7 +814,7 @@ class Project(Document):
 	def sync_additional_tasks(self):
 		"""sync tasks and remove table"""
 		if self.flags.dont_sync_tasks: return
-
+		
 		task_names = []
 		task_idx = 0
 		for t in self.additional_tasks:
@@ -880,11 +904,11 @@ class Project(Document):
 		self.actual_start_date = from_time_sheet.start_date
 		self.actual_end_date = from_time_sheet.end_date
 
-		self.total_costing_amount = from_time_sheet.costing_amount
-		self.total_billing_amount = from_time_sheet.billing_amount
-		self.actual_time = from_time_sheet.time
+		self.total_costing_amount = flt(from_time_sheet.costing_amount)
+		self.total_billing_amount = flt(from_time_sheet.billing_amount)
+		self.actual_time = flt(from_time_sheet.time)
 
-		self.total_expense_claim = from_expense_claim.total_sanctioned_amount
+		self.total_expense_claim = flt(from_expense_claim.total_sanctioned_amount)
 
 		self.gross_margin = flt(self.total_billing_amount) - flt(self.total_costing_amount)
 

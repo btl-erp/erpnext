@@ -8,6 +8,7 @@
  "custom": 0, 
  "docstatus": 0, 
  "doctype": "DocType", 
+ "document_type": "Document", 
  "editable_grid": 1, 
  "fields": [
   {
@@ -506,7 +507,7 @@
    "unique": 0
   }, 
   {
-   "allow_on_submit": 0, 
+   "allow_on_submit": 1, 
    "bold": 0, 
    "collapsible": 0, 
    "fieldname": "reference", 
@@ -694,8 +695,8 @@
  "issingle": 0, 
  "istable": 1, 
  "max_attachments": 0, 
- "modified": "2016-07-11 03:28:01.575159", 
- "modified_by": "Administrator", 
+ "modified": "2019-06-13 11:55:17.841732", 
+ "modified_by": "dorji2392@bt.bt", 
  "module": "Accounts", 
  "name": "Journal Entry Account", 
  "owner": "Administrator", 
@@ -704,5 +705,6 @@
  "read_only": 0, 
  "read_only_onload": 0, 
  "sort_order": "DESC", 
+ "track_changes": 0, 
  "track_seen": 0
 }

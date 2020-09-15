@@ -30,15 +30,14 @@ def get_notification_config():
 			"Delivery Note": {"docstatus": 0},
 			"Stock Entry": {"docstatus": 0},
 			"Material Request": {
-				"docstatus": ("<", 2),
+				"docstatus": 0,
 				"status": ("not in", ("Stopped",)),
 				"per_ordered": ("<", 100)
 			},
 			"Request for Quotation": { "docstatus": 0 },
 			"Supplier Quotation": {"docstatus": 0},
 			"Purchase Order": {
-				"status": ("not in", ("Completed", "Closed")),
-				"docstatus": ("<", 2)
+				"docstatus": 0,
 			},
 			"Purchase Receipt": {"docstatus": 0},
 			"Production Order": { "status": ("in", ("Draft", "Not Started", "In Process")) },
@@ -52,6 +51,7 @@ def get_notification_config():
 				"docstatus": 0,
 				"claim_status": ("not in", ("Rejected by HR", "Rejected by Supervisor"))
 			},
+			"MusterRoll Application": {"docstatus" :0},
 			"Leave Encashment": {"docstatus": 0},
 			"Break Down Report": {"docstatus": 0},
 			"Job Card": {"docstatus": 0},
@@ -85,6 +85,12 @@ def get_notification_config():
 			"HSD Payment" : {"docstatus": 0},
 			"Equipment POL Transfer" : {"docstatus": 0},
                         "Equipment Request" : {"percent_completed": ("<", "100"), "docstatus": 1},
-                        "Revenue Target Adjustment": {"docstatus": 0}
+                        "Revenue Target Adjustment": {"docstatus": 0},
+			"Employee Benefits" : {"docstatus": 0},
+			"Asset Modifier": {"docstatus": 0},
+			"Asset Movement": {"docstatus": 0},
+			"Bulk Asset Transfer": {"docstatus": 0},
+			"Supplementary Budget": {"docstatus": 0},
+			"Budget Reappropiation": {"docstatus": 0},
 		}
 	}

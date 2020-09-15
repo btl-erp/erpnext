@@ -12,7 +12,22 @@ frappe.ui.form.on("Item", {
 
 		// should never check Private
 		frm.fields_dict["website_image"].df.is_private = 0;
-
+		cur_frm.set_query("expense_account", function(){
+                        if (frm.doc.item_group == "Fixed Asset"){
+                                return {
+                                        "filters": [
+                                                ["account_type", "=", "Fixed Asset"],
+                                        ]
+                                          }
+                                }
+                        else{
+                                return {
+                                        "filters": [
+                                                ["account_type", "!=", "Fixed Asset"],
+                                        ]
+                                          }
+                                }
+                         });
 	},
 
 	refresh: function(frm) {
@@ -415,6 +430,7 @@ frappe.ui.form.on("Item", "refresh", function(frm) {
         return {
             "filters": {
 		"item_group": frm.doc.item_group,
+		"disabled" : 0,
             }
         };
     });

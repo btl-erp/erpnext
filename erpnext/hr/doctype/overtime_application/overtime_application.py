@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, nowdate
+from erpnext.custom_utils import check_budget_available, get_branch_cc 
 
 class OvertimeApplication(Document):
 	def validate(self):
@@ -16,10 +17,17 @@ class OvertimeApplication(Document):
 	def on_submit(self):
 		#self.check_status()
 		self.validate_submitter()
+         	#self.check_budget()
 		self.post_journal_entry()
 
 	def on_cancel(self):
 		self.check_journal()
+	
+	def check_budget(self):
+		cc = get_branch_cc(self.branch)
+                account = frappe.db.get_single_value ("HR Accounts Settings", "overtime_account")
+
+                check_budget_available(cc, account, self.posting_date, self.total_amount, throw_error=True)		
 
 	def calculate_totals(self):
                 total_hours  = 0
@@ -82,10 +90,11 @@ class OvertimeApplication(Document):
 
 		je = frappe.new_doc("Journal Entry")
 		je.flags.ignore_permissions = 1 
-		je.title = "Payment for Overtime (" + self.employee_name + ")"
+		je.title = "Overtime payment for " + self.employee_name + "(" + self.employee + ")"
 		je.voucher_type = 'Bank Entry'
 		je.naming_series = 'Bank Payment Voucher'
-		je.remark = 'Payment Paid against : ' + self.name;
+		je.remark = 'Payment Paid against : ' + self.name + " for " + self.employee;
+		je.user_remark = 'Payment Paid against : ' + self.name + " for " + self.employee;
 		je.posting_date = self.posting_date
 		total_amount = self.total_amount
 		je.branch = self.branch
@@ -120,4 +129,4 @@ class OvertimeApplication(Document):
 		if cl_status and cl_status != 2:
 			frappe.throw("You need to cancel the journal entry " + str(self.payment_jv) + " first!")
 		
-		self.db_set("payment_jv", "")
+		self.db_set("payment_jv", None)

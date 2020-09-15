@@ -1,5 +1,12 @@
 // Copyright (c) 2016, Frappe Technologies Pvt. Ltd. and contributors
 // For license information, please see license.txt
+/*
+--------------------------------------------------------------------------------------------------------------------------
+Version          Author          CreatedOn          ModifiedOn          Remarks
+------------ --------------- ------------------ -------------------  -----------------------------------------------------
+2.0.190419       SHIV		                        2019/04/19         JE issue while submitting
+--------------------------------------------------------------------------------------------------------------------------                                                                          
+*/
 
 cur_frm.add_fetch("employee", "employee_name", "employee_name")
 cur_frm.add_fetch("employee", "employee_subgroup", "grade")
@@ -35,7 +42,7 @@ frappe.ui.form.on('Travel Authorization', {
 			frm.toggle_reqd("document_status", frm.doc.docstatus==0);
 		}
 		
-		if (frm.doc.docstatus == 1 && !frm.doc.travel_claim && frm.doc.document_status == "Approved") {
+		if (frm.doc.docstatus == 1 && !frm.doc.travel_claim && frm.doc.workflow_state == "Approved") {
 			frm.add_custom_button("Create Travel Claim", function() {
 				if(frm.doc.end_date_auth < get_today()){
 					frappe.model.open_mapped_doc({
@@ -98,9 +105,11 @@ frappe.ui.form.on('Travel Authorization', {
 		frm.toggle_reqd("advance_amount", frm.doc.need_advance==1);
 	},
 	"advance_amount": function(frm) {
-		if(frm.doc.advance_amount > frm.doc.estimated_amount * 0.9) {
-			msgprint("Advance amount cannot be greater than 90% of the estimated amount")
-			frm.set_value("advance_amount", 0)
+		if(frm.doc.advance_amount && !frm.doc.estimated_amount){
+			msgprint("Total Estimated Amount required for advance request");
+		} else if (frm.doc.advance_amount > frm.doc.estimated_amount * 0.9) {
+			msgprint("Advance amount cannot be greater than 90% of the estimated amount");
+			//frm.set_value("advance_amount", 0)
 		}
 		else {
 			if(frm.doc.currency == "BTN") {
@@ -148,10 +157,9 @@ frappe.ui.form.on("Travel Authorization Item", {
 			}
 		}
 		
-                if (item.till_date >= item.date) {
+		if (item.till_date >= item.date) {
                         frappe.model.set_value(cdt, cdn, "no_days", 1 + cint(frappe.datetime.get_day_diff(item.till_date, item.date)))
                 }
-
 		/*
 		if(item.till_date){
 			if (item.till_date >= item.date) {
@@ -214,9 +222,12 @@ function update_advance_amount(frm) {
 		},
 		callback: function(r) {
 			if(r.message) {
-				frm.set_value("advance_amount_nu", flt(frm.doc.advance_amount) * flt(r.message))
-				frm.set_value("advance_amount", format_currency(flt(frm.doc.advance_amount), frm.doc.currency))
-				frm.set_value("estimated_amount", format_currency(flt(frm.doc.estimated_amount), frm.doc.currency))
+				frm.set_value("advance_amount_nu", flt(frm.doc.advance_amount) * flt(r.message));
+				/* ++++++++++ Ver 2.0.190419 Begins ++++++++++*/
+				// Following lines commented as they are getting updated with null values and also serves no purpose
+				//frm.set_value("advance_amount", format_currency(flt(frm.doc.advance_amount), frm.doc.currency))
+				//frm.set_value("estimated_amount", format_currency(flt(frm.doc.estimated_amount), frm.doc.currency))
+				/* ++++++++++ Ver 2.0.190419 Ends ++++++++++++*/
 			}
 		}
 	})
@@ -241,3 +252,54 @@ frappe.form.link_formatters['Employee'] = function(value, doc) {
 		__("Update")
 	);
 })*/
+
+frappe.ui.form.on("Travel Authorization", "after_save", function(frm, cdt, cdn){
+        if(in_list(user_roles, "Approver")){
+                if (frm.doc.workflow_state && frm.doc.workflow_state.indexOf("Rejected") >= 0){
+                        frappe.prompt([
+                                {
+                                        fieldtype: 'Small Text',
+                                        reqd: true,
+                                        fieldname: 'reason'
+                                }],
+                                function(args){
+                                        validated = true;
+                                        frappe.call({
+                                                method: 'frappe.core.doctype.communication.email.make',
+                                                args: {
+                                                        doctype: frm.doctype,
+                                                        name: frm.docname,
+                                                        subject: format(__('Reason for {0}'), [frm.doc.workflow_state]),
+                                                        content: args.reason,
+                                                        send_mail: false,
+                                                        send_me_a_copy: false,
+                                                        communication_medium: 'Other',
+                                                        sent_or_received: 'Sent'
+                                                },
+                                                callback: function(res){
+                                                        if (res && !res.exc){
+                                                                frappe.call({
+                                                                        method: 'frappe.client.set_value',
+                                                                        args: {
+                                                                                doctype: frm.doctype,
+                                                                                name: frm.docname,
+                                                                                fieldname: 'reason',
+                                                                                value: frm.doc.reason ?
+                                                                                        [frm.doc.reason, '['+String(frappe.session.user)+' '+String(frappe.datetime.nowdate())+']'+' : '+String(args.reason)].join('\n') : frm.doc.workflow_state
+                                                                        },
+                                                                        callback: function(res){
+                                                                                if (res && !res.exc){
+                                                                                        frm.reload_doc();
+                                                                                }
+                                                                        }
+                                                                });
+}
+                                                }
+                                        });
+                                },
+                                __('Reason for ') + __(frm.doc.workflow_state),
+                                __('Save')
+                        )
+                }
+        }
+});

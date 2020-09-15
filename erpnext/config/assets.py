@@ -26,7 +26,7 @@ def get_data():
 				},
 				{
 					"type": "doctype",
-					"name": "Asset Modifier Tool",
+					"name": "Asset Modifier",
 					"description": "Asset Addition Tool",
 					"label": "Asset Addition Tool",
 					"hide_count": True
@@ -81,6 +81,18 @@ def get_data():
 					"doctype": "Asset",
 					"is_query_report": True,
 				},
+				{
+                    "type": "report",
+                    "name": "Asset Movement Register",
+                    "doctype": "Asset",
+                    "is_query_report": True,
+                },
+								{
+                    "type": "report",
+                    "name": "Asset Insurance Report",
+                    "doctype": "Asset",
+                    "is_query_report": True,
+                },
 			]
 		},
 	]

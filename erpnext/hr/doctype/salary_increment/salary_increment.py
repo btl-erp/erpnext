@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
+'''
+--------------------------------------------------------------------------------------------------------------------------
+Version          Author          CreatedOn          ModifiedOn          Remarks
+------------ --------------- ------------------ -------------------  -----------------------------------------------------
+3.0.200106        SHIV                             06/01/2020         "Date Of Reference" should be from date_of_joining
+--------------------------------------------------------------------------------------------------------------------------                                                                          
+'''
 
 from __future__ import unicode_literals
 import frappe
@@ -71,7 +78,13 @@ class SalaryIncrement(Document):
                 self.employment_type    = doc.employment_type
                 self.employee_group     = doc.employee_group
                 self.employee_subgroup  = doc.employee_subgroup
+                # Following line commented by SHIV on 2019/01/04
+                # date_of_reference which is used for pro-rating should be salary structures from date
+                #self.date_of_reference  = doc.date_of_joining
+                ### Ver.3.0.200106 Begins, by SHIV on 2020/01/06
+                # Following code is added
                 self.date_of_reference  = doc.date_of_joining
+                ### Ver.3.0.200106 Ends
                 self.company            = doc.company
                 self.branch             = doc.branch
                 self.department         = doc.department
@@ -102,6 +115,13 @@ class SalaryIncrement(Document):
                         if self.salary_structure:
                                 # Fetching Basic Pay from salary structure
                                 sst_doc = frappe.get_doc("Salary Structure", self.salary_structure)
+                                # Following line added by SHIV on 2019/01/04
+                                # date_of_reference which is used for pro-rating should be salary structures from date
+                                ### Ver.3.0.200106 Begins, by SHIV on 2019/01/06
+                                # Following line is replaced by subsequent
+                                #self.date_of_reference = sst_doc.from_date
+                                self.date_of_reference = sst_doc.from_date if getdate(sst_doc.from_date) < getdate(self.date_of_reference) else self.date_of_reference
+                                ### Ver.3.0.200106 Ends
                                 for d in sst_doc.earnings:
                                         if d.salary_component == 'Basic Pay':
                                                 self.old_basic = flt(d.amount)
@@ -129,7 +149,12 @@ class SalaryIncrement(Document):
                                 # Calculating increment
                                 if flt(self.total_months) >= flt(self.minimum_months):
                                         self.calculated_factor    = 1 if flt(self.total_months)/12 >= 1 else round(flt(self.total_months if cint(group_doc.increment_prorated) else 12)/12,2)
-                                        self.calculated_increment = round(((flt(self.old_basic)*flt(self.payscale_increment)*0.01) if self.payscale_increment_method == 'Percent' else flt(self.payscale_increment))*flt(self.calculated_factor))
+                                        
+                                        #self.calculated_increment = round(((flt(self.old_basic)*flt(self.payscale_increment)*0.01) if self.payscale_increment_method == 'Percent' else flt(self.payscale_increment))*flt(self.calculated_factor))
+                                        self.calculated_increment = (flt(self.old_basic)*flt(self.payscale_increment)*0.01) if self.payscale_increment_method == 'Percent' else flt(self.payscale_increment)
+                                        if cint(group_doc.increment_prorated):
+                                                self.calculated_increment = round((flt(self.calculated_increment)/12)*(flt(self.total_months) if flt(self.total_months) < 12 else 12))
+                                                
                                         self.increment = flt(self.calculated_increment)
                                         self.new_basic = flt(self.old_basic) + flt(self.increment)
                                 else:
