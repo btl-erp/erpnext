@@ -23,6 +23,15 @@ frappe.ui.form.on('Asset', {
 				}
 			};
 		});
+                if(frm.doc.docstatus===1){
+			frm.add_custom_button(__('Journal Entry'), function(){
+				frappe.route_options = {
+					"Journal Entry Account.reference_type": me.frm.doc.doctype,
+					"Journal Entry Account.reference_name": me.frm.doc.name,
+				};
+				frappe.set_route("List", "Journal Entry");
+			}, __("View"));
+		}
 	},
 
 	refresh: function(frm) {
@@ -58,6 +67,15 @@ frappe.ui.form.on('Asset', {
 
 			frm.trigger("show_graph");
 		}
+		if(frm.doc.docstatus===1){
+                        frm.add_custom_button(__('Journal Entry'), function(){
+                                frappe.route_options = {
+                                        "Journal Entry Account.reference_type": me.frm.doc.doctype,
+                                        "Journal Entry Account.reference_name": me.frm.doc.name,
+                                };
+                                frappe.set_route("List", "Journal Entry");
+                        }, __("View"));
+                }
 	},
 
 	show_graph: function(frm) {
@@ -404,12 +422,13 @@ frappe.call({
 // gross amount calculation
 frappe.ui.form.on("Asset", "asset_rate", function(frm) {
     if (frm.doc.asset_quantity_) {
-        cur_frm.set_value("gross_purchase_amount", ((frm.doc.asset_quantity_ * frm.doc.asset_rate) + frm.doc.additional_value))
+        cur_frm.set_value("gross_purchase_amount", ((frm.doc.asset_quantity_ * frm.doc.asset_rate) + (frm.doc.additional_value || 0)))
     }
 })
 
 frappe.ui.form.on("Asset", "asset_quantity_", function(frm) {
     if (frm.doc.asset_rate) {
-        cur_frm.set_value("gross_purchase_amount", frm.doc.asset_quantity_ * frm.doc.asset_rate)
+	//cur_frm.set_value("gross_purchase_amount", frm.doc.asset_quantity_ * frm.doc.asset_rate)
+	cur_frm.set_value("gross_purchase_amount", ((frm.doc.asset_quantity_ * frm.doc.asset_rate) + (frm.doc.additional_value || 0)))
     }
 })

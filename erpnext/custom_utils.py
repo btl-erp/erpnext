@@ -48,11 +48,8 @@ def check_future_date(date):
 def get_branch_cc(branch):
         if not branch:
                 frappe.throw("No Branch Argument Found")
-        cc = frappe.db.get_value("Cost Center", {"branch": branch, "is_disabled": 0, "is_group": 0}, "name")
-        if not cc:
-		print(branch)
-                frappe.throw(str(branch) + " is not linked to any cost center")
-        return cc
+        doc = frappe.get_doc("Branch", branch)
+        return doc.cost_center
 
 ##
 # Rounds to the nearest 5 with precision of 1 by default
@@ -80,6 +77,23 @@ def get_year_end_date(date):
 # Ver 2.0 Begins, following method added by SHIV on 28/11/2017
 @frappe.whitelist()
 def get_user_info(user=None, employee=None, cost_center=None):
+        # Ver 2.0.181226 Begins, by SHIV on 2018/12/26
+        # SMCL cost_center, branch are to be fetched from Division master
+        info = {}
+        branch = None
+        cost_center = None
+        
+        if employee:
+                branch, cost_center = frappe.db.get_value("Division", frappe.db.get_value("Employee",{"name":employee},"division"),["branch","cost_center"])
+        elif user:
+                if frappe.db.exists("Employee",{"user_id":user}):
+                        branch, cost_center = frappe.db.get_value("Division", frappe.db.get_value("Employee",{"user_id":user},"division"),["branch","cost_center"])
+
+        info.setdefault('cost_center', cost_center)
+        info.setdefault('branch', branch)
+
+        # Following code commented by SHIV on 2018/12/26
+        '''
         info = {}
         
 	#cost_center,branch = frappe.db.get_value("Employee", {"user_id": user}, ["cost_center", "branch"])
@@ -125,6 +139,8 @@ def get_user_info(user=None, employee=None, cost_center=None):
         info.setdefault('customer', customer)
 	
 	#return [cc, wh, app, cust]
+        '''
+        # Ver 2.0.181226 Ends
         return info
 # Ver 2.0 Ends
 
@@ -134,7 +150,41 @@ def get_user_info(user=None, employee=None, cost_center=None):
 @frappe.whitelist()
 def cancel_draft_doc(doctype, docname):
         doc = frappe.get_doc(doctype, docname)
+        ##### Ver 2.0.190304 Begins, following coded added by SHIV
+        if doctype == "Leave Application":    
+                if doc.get("workflow_state") not in ("Draft","Rejected") and frappe.session.user not in (doc.get("leave_approver"),"Administrator"):
+                        frappe.throw(_("Only leave approver <b>{0}</b> ( {1} ) can cancel this document.").format(doc.leave_approver_name, doc.leave_approver), title="Operation not permitted")
+	##### Ver 2.0.190304 Ends
         doc.db_set("docstatus", 2)
+
+        ##### Ver 2.0.190304 Begins, following code added by SHIV
+        # Updating Child tables docstatus to 2
+        meta = frappe.get_meta(doctype)
+        if not meta.issingle:
+                if not meta.istable:
+                        for df in meta.get_table_fields():
+                                frappe.db.sql("""update `tab{0}` set docstatus=2 where parent='{1}'""".format(df.options,docname))
+
+        if frappe.db.exists("Workflow", doctype):
+                wfs = frappe.db.get_values("Workflow Document State", {"parent":doctype, "doc_status": 2}, "state", as_dict=True)
+                doc.db_set("workflow_state", wfs[0].state if len(wfs) == 1 else "Cancelled")
+
+        if doctype == "Material Request":
+		doc.db_set("status", "Cancelled")
+	elif doctype == "Leave Application":
+		doc.db_set("status", "Cancelled")
+	elif doctype == "Travel Claim":
+		if doc.ta:
+			ta = frappe.get_doc("Travel Authorization", doc.ta)
+			ta.db_set("travel_claim", None)
+	elif doctype == "Job Card":
+		br = frappe.get_doc("Break Down Report", doc.break_down_report)
+                br.db_set("job_card", None)
+        else:
+                pass
+
+        ##### Ver 2.0.190304 Begins, following code commented by SHIV
+        '''
 	if doctype == "Material Request":
 		doc.db_set("status", "Cancelled")
 		doc.db_set("workflow_state", "Cancelled")
@@ -153,7 +203,8 @@ def cancel_draft_doc(doctype, docname):
                 doc.db_set("workflow_state", "Cancelled")
         else:
                 pass
-                
+        '''
+        ##### Ver 2.0.190304 Ends
 
 ##
 #  nvl() function added by SHIV on 02/02/2018
@@ -267,8 +318,7 @@ def check_budget_available(cost_center, budget_account, transaction_date, amount
 @frappe.whitelist()
 def get_cc_warehouse(branch):
         cc = get_branch_cc(branch)
-        wh = frappe.db.get_value("Cost Center", cc, "warehouse")
-        return {"cc": cc, "wh": wh}	
+        return {"cc": cc, "wh": None}	
 
 @frappe.whitelist()
 def get_branch_warehouse(branch):
@@ -311,3 +361,35 @@ def sendmail(recipent, subject, message, sender=None):
 		frappe.sendmail(recipients=recipent, sender=None, subject=subject, message=message)
 	except:
 		pass
+
+def get_settings_value(setting_dt, company, field_name):
+	value = frappe.db.sql("select {0} from `tab{1}` where company = '{2}'".format(field_name, setting_dt, company))
+	return value and value[0][0] or None
+
+###
+# get_production_groups(group):
+###
+def get_production_groups(group):
+	if not group:
+		frappe.throw("Invalid Production Group")
+	groups = []
+	for a in frappe.db.sql("select item_sub_group from `tabProduction Group Item` where parent = %s", group, as_dict=1):
+		groups.append(str(a.item_sub_group))
+	return groups
+
+@frappe.whitelist()
+def get_branch_from_cost_center(cost_center):
+        return frappe.db.get_value("Branch", {"cost_center": cost_center, "is_disabled": 0}, "name")
+
+### 
+# get_production_groups(group):
+### 
+def get_production_groups(group): 
+        if not group:
+                frappe.throw("Invalid Production Group")
+        groups = []
+        for a in frappe.db.sql("select item_code from `tabProduction Group Item` where parent = %s", group, as_dict=1):
+                groups.append(str(a.item_code))
+        return groups
+
+

@@ -32,8 +32,25 @@ from frappe.model.document import Document
 class LeaveApplication(Document):
 	def get_feed(self):
 		return _("{0}: From {0} of type {1}").format(self.status, self.employee_name, self.leave_type)
+	
+	def get_status(self):
+                if self.workflow_state == "Rejected":
+                        self.status = "Rejected"
+                elif self.workflow_state == "Approved":
+                        if self.docstatus == 1:
+                                self.status = "Approved"
+                        else:
+                                self.workflow_state = "Waiting Supervisor Approval"
+                elif self.workflow_state == "Cancelled":
+                        if frappe.session.user not in (self.leave_approver,"Administrator"):
+                                frappe.throw(_("Only leave approver <b>{0}</b> ( {1} ) can cancel this document.").format(self.leave_approver_name, self.leave_approver), title="Operation not permitted")
+                        self.status = "Cancelled"
+                else:
+                        pass
+	
 
 	def validate(self):
+		self.get_status()
 		self.validate_fiscal_year()
 		if not getattr(self, "__islocal", None) and frappe.db.exists(self.doctype, self.name):
 			self.previous_doc = frappe.db.get_value(self.doctype, self.name, "*", as_dict=True)
@@ -52,6 +69,8 @@ class LeaveApplication(Document):
 			self.validate_salary_processed_days()
 			self.validate_leave_approver()
 			self.validate_backdated_applications()
+
+		#self.check_approver()
 
 	def on_update(self):
 		self.validate_fiscal_year()
@@ -73,14 +92,18 @@ class LeaveApplication(Document):
 			#self.validate_back_dated_application()
 			# notify leave applier about approval
 			self.notify_employee(self.status)
+			self.db_set("docstatus",1)
+			self.update_cf_entry('Submit')
 		self.update_for_backdated_applications()
+		#self.check_approver()
 
 	def on_cancel(self):
 		# notify leave applier about cancellation
 		self.db_set("status", "Cancelled")
 		self.notify_employee("cancelled")
 		self.update_for_backdated_applications()
-
+		self.update_cf_entry('Cancel')
+		self.check_approver()
         # ++++++++++++++++++++ Ver 2.0 BEGINS ++++++++++++++++++++
         # Following method created by SHIV on 2018/02/12
         def validate_backdated_applications(self):
@@ -257,6 +280,12 @@ class LeaveApplication(Document):
 			frappe.throw(_("Only the selected Leave Approver can submit this Leave Application"),
 				LeaveApproverIdentityError)
 
+
+	def check_approver(self):
+		if self.workflow_state not in ("Draft", "Apply", "Reapply"):
+			if frappe.session.user == self.owner:
+				frappe.throw("You cannot {0} your own Leave Application".format(self.workflow_state))
+
 	def notify_employee(self, status):
 		employee = frappe.get_doc("Employee", self.employee)
 		if not employee.user_id:
@@ -308,6 +337,25 @@ class LeaveApplication(Document):
                 if not frappe.get_value("Leave Type", self.leave_type, "is_carry_forward"):
                         if str(self.from_date)[0:4] != str(self.to_date)[0:4]:
                                 frappe.throw("Leave Application cannot overlap fiscal years")
+
+	#update Carry Forward Transaction
+        #only if leave_type = 'Casual Leave'
+        def update_cf_entry(self, action):
+                leave_days = 0.0
+                if action == 'Submit':
+                        leave_days = self.total_leave_days
+
+                if action == 'Cancel':
+                        leave_days = -1 * self.total_leave_days
+
+                cf = frappe.db.sql(""" select p.name from `tabCarry Forward Entry` p, `tabCarry Forward Item` c where c.parent = p.name 
+                                 and c.employee = '{0}' and (p.fiscal_year = '{1}' or p.fiscal_year = '{2}') and p.docstatus = 1
+                                 """.format(self.employee,  getdate(self.from_date).year, getdate(self.to_date).year), frappe._dict())
+                c = cf and cf[0] or 0.0
+                if cf:
+                        frappe.db.sql(""" update `tabCarry Forward Item` set leaves_taken = leaves_taken + {0}, 
+                                leave_balance = leaves_allocated - leaves_taken  where parent = '{1}' and employee = '{2}'
+                                """.format(leave_days, c[0], self.employee))
 
 @frappe.whitelist()
 def get_approvers(doctype, txt, searchfield, start, page_len, filters):
@@ -370,22 +418,41 @@ def get_leave_balance_on(employee, leave_type, ason_date, allocation_records=Non
                
 	return flt(allocation.total_leaves_allocated) - flt(leaves_taken) 
         '''
-        
+       
+	#leaves carry forwarded from CL to EL
+
+        carry_forward = frappe.db.sql(""" select c.employee, c.leave_balance,  p.fiscal_year from `tabCarry Forward Entry` p, 
+                        `tabCarry Forward Item` c where c.parent = p.name and p.docstatus = 1 and p.leave_type = 'Casual Leave' 
+                        and {0}-fiscal_year = 1 and c.employee = '{1}' and p.docstatus = 1 
+                        order by fiscal_year desc limit 1""".format(getdate(ason_date).year, employee), frappe._dict())
+        leaves = 0.0
+        if carry_forward:
+                if leave_type == 'Casual Leave':
+                        leaves = carry_forward and -1* carry_forward[0][1] or 0.0
+                elif leave_type == 'Earned Leave':
+                        leaves = carry_forward and carry_forward[0][1] or 0.0
+                else:
+                        leaves = 0.0
+
+
         allocation   = get_leave_allocation_records(ason_date, employee).get(employee, frappe._dict()).get(leave_type, frappe._dict())
         balance      = 0
-        
-        if allocation:
+	
+	if allocation:
                 leaves_taken = get_approved_leaves_for_period(employee, leave_type, allocation.from_date, ason_date)
-                balance      = flt(allocation.total_leaves_allocated) - flt(leaves_taken)
-                
+                balance      = flt(allocation.total_leaves_allocated) - flt(leaves_taken) + flt(leaves)
+                if balance <= 0:
+                        balance = flt(allocation.total_leaves_allocated) - flt(leaves_taken)
+
                 if leave_type == 'Earned Leave':
                         le = get_le_settings()
-                        if flt(flt(allocation.total_leaves_allocated) - flt(leaves_taken)) > flt(le.encashment_lapse):
+                        if flt(flt(allocation.total_leaves_allocated) - flt(leaves_taken)) + flt(leaves) > flt(le.encashment_lapse):
                                 balance = flt(le.encashment_lapse)
         else:
                 balance = 0
-                
+
         return flt(balance)
+ 
         ##
         #  Ver 2.0 Ends
         ##
@@ -422,7 +489,6 @@ def get_approved_leaves_for_period(employee, leave_type, from_date, to_date):
 		"employee": employee,
 		"leave_type": leave_type
 	}, as_dict=1)
-
 	leave_days = 0
 	for leave_app in leave_applications:
 		if leave_app.from_date >= getdate(from_date) and leave_app.to_date <= getdate(to_date):

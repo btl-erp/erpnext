@@ -217,7 +217,7 @@ def check_if_advance_entry_modified(args):
 				where
 					t1.name = t2.parent and t1.docstatus = 1 
 					and t1.name = %(voucher_no)s and t2.name = %(voucher_detail_no)s
-					and t1.party_type = %(party_type)s and t1.party = %(party)s and t1.{0} = %(account)s
+					and t1.party_type = %(party_type)s and t1.party = %(party)s
 					and t2.reference_doctype in ("", "Sales Order", "Purchase Order") 
 					and t2.allocated_amount = %(unadjusted_amount)s
 			""".format(party_account_field), args)
@@ -225,10 +225,9 @@ def check_if_advance_entry_modified(args):
 			ret = frappe.db.sql("""select name from `tabPayment Entry`
 				where
 					name = %(voucher_no)s and docstatus = 1
-					and party_type = %(party_type)s and party = %(party)s and {0} = %(account)s
+					and party_type = %(party_type)s and party = %(party)s
 					and unallocated_amount = %(unadjusted_amount)s
-			""".format(party_account_field), args)
-
+			""", args)
 	if not ret:
 		throw(_("""Payment Entry has been modified after you pulled it. Please pull it again."""))
 
@@ -579,3 +578,68 @@ def get_children():
 				each["balance_in_account_currency"] = flt(get_balance_on(each.get("value")))
 
 	return acc
+
+##
+#Return all the child cost centers of the current cost center
+##
+def get_child_cost_centers(current_cs=None):
+	allchilds = [str('DUMMY') ]
+	allcs = []
+	cs_name = cs_par_name = "";
+
+	if current_cs:
+		#Get all cost centers
+		allcs = frappe.db.sql("SELECT name, parent_cost_center FROM `tabCost Center`", as_dict=True);
+		#get the current cost center name
+		query ="SELECT name, parent_cost_center FROM `tabCost Center` where name = \"" + current_cs + "\";";
+		current = frappe.db.sql(query, as_dict=True);
+
+		if(current):
+			for a in current:
+				cs_name = a['name'];
+				cs_par_name = a['parent_cost_center'];
+
+			        #loop through the cost centers to search for the child cost centers
+				allchilds.append(str(cs_name));
+				for b in allcs:
+				    for c in allcs:
+					  if(c['parent_cost_center'] in allchilds):
+						  if(c['name'] not in allchilds):
+						       allchilds.append(str(c['name']));
+		return allchilds;
+
+
+###
+# Return From/To Date from Report Period
+###
+def get_period_date(fiscal_year, period, cumulative=None):
+        if not period or not fiscal_year:
+                frappe.throw("Either Fiscal Year or Report Period is missing")
+
+        values = ["from_date", "to_date"]
+        if cumulative:
+                values = ["c_from_date", "c_to_date"]
+        from_date, to_date = frappe.db.get_value("Report Period", period, values)
+        if from_date and to_date:
+                from_date = str(fiscal_year) + str(from_date)
+                to_date = str(fiscal_year) + str(to_date)
+                return from_date, to_date
+        else:
+                frappe.throw("Report Period Not Defined Properly")
+
+def get_tds_account(percent):
+	if not percent:
+		frappe.throw("TDS Percent is mandatory")
+	if cint(percent) == 2:
+		field = "tds_2_account"
+	elif cint(percent) == 3:
+		field = "tds_3_account"
+	elif cint(percent) == 5:
+		field = "tds_5_account"
+	elif cint(percent) == 10:
+		field = "tds_10_account"
+	else:
+		frappe.throw("Invalid TDS Rate")
+	return frappe.db.get_single_value("Accounts Settings", field)
+
+

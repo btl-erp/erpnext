@@ -13,8 +13,6 @@ from frappe.desk.notifications import clear_doctype_notifications
 from erpnext.controllers.recurring_document import month_map, get_next_date
 
 from erpnext.controllers.selling_controller import SellingController
-from frappe.model.naming import make_autoname
-from erpnext.custom_autoname import get_auto_name
 from erpnext.custom_utils import check_uncancelled_linked_doc, check_future_date
 
 form_grid_templates = {
@@ -27,9 +25,6 @@ class SalesOrder(SellingController):
 	def __init__(self, arg1, arg2=None):
 		super(SalesOrder, self).__init__(arg1, arg2)
 	
-	def autoname(self):
-		self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
-
 	def validate(self):
 		super(SalesOrder, self).validate()
 
@@ -51,7 +46,7 @@ class SalesOrder(SellingController):
 
 		if not self.billing_status: self.billing_status = 'Not Billed'
 		if not self.delivery_status: self.delivery_status = 'Not Delivered'
-
+		
 	def validate_mandatory(self):
 		# validate transaction date v/s delivery date
 		if self.delivery_date:
@@ -408,6 +403,9 @@ def make_delivery_note(source_name, target_doc=None):
 	target_doc = get_mapped_doc("Sales Order", source_name, {
 		"Sales Order": {
 			"doctype": "Delivery Note",
+			"field_map": {
+				"naming_series": "naming_series",
+			},
 			"validation": {
 				"docstatus": ["=", 1]
 			}

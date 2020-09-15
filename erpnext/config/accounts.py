@@ -38,10 +38,13 @@ def get_data():
 				},
 				{
 					"type": "doctype",
-					"name": "Transfer CoGM",
-					"label": "Transfer COGM Balance",
-					"description": _("TRansfer COGM Balance between fiscal years")
+					"name": "Transporter Payment",
 				},
+				{
+                                        "type": "doctype",
+                                        "name": "TDS Remittance",
+                                        "description": _("TDS Remittance")
+                                },
 			]
 		},
 		{
@@ -77,6 +80,10 @@ def get_data():
 					"name": "Vehicle",
                                         "label": _("Vehicle Master"),
 				},
+				{
+					"type": "doctype",	
+					"name": "Financial Institution",										                               "label": _("Financial Institution"),			
+				},
 			]
 		},
 		{
@@ -97,12 +104,12 @@ def get_data():
 					"type": "doctype",
 					"name": "Asset Category",
 				},
-				{
-					"type": "report",
-					"name": "Asset Depreciation Ledger",
-					"doctype": "Asset",
-					"is_query_report": True,
-				},
+				#{
+				#	"type": "report",
+				#	"name": "Asset Depreciation Ledger",
+				#	"doctype": "Asset",
+				#	"is_query_report": True,
+				#},
 				{
 					"type": "report",
 					"name": "Asset Depreciations and Balances",
@@ -122,7 +129,7 @@ def get_data():
 				},
 				{
 					"type": "report",
-					"name": "Property Plant & Equipment",
+					"name": "Property Plant and Equipment",
 					"doctype": "GL Entry",
 					"is_query_report": True,
 				},
@@ -184,6 +191,53 @@ def get_data():
 				}
 			]
 		},
+                {
+                        "label": _("Imprest Management"),
+                        "icon": "icon-cog",
+                        "items": [
+                                {
+                                        "type": "doctype",
+                                        "name": "Imprest Type",
+                                        "description": _("Imprest Types.")
+                                },
+                                {
+                                        "type": "doctype",
+                                        "name": "Imprest Receipt",
+                                        "label": "Receipt Entry",
+                                        "description": _("Imprest Receipt Entry.")
+                                },
+                                {
+                                        "type": "doctype",
+                                        "name": "Imprest Recoup",
+                                        "label": "Recoup Entry",
+                                        "description": _("Imprest Recoup Entry.")
+                                },
+                                {
+                                        "type": "report",
+                                        "label": _("Imprest Register"),
+                                        "is_query_report": True,
+                                        "name": "Register Imprest",
+                                        "doctype": "Imprest Receipt"
+                                },
+                        ]
+                },
+		  {
+                        "label": _("Tools"),
+                        "items": [
+                                {
+                                        "type": "doctype",
+                                        "name": "Salary Remittance",
+                                },
+                                {
+                                        "type": "doctype",
+                                        "name": "Fixed Deposit",
+                                },
+				{
+					"type": "doctype",
+					"name": "RRCO Receipt Modifier",
+				},
+                        ]
+                },
 		{
 			"label": _("Accounting Statements"),
 			"items": [
@@ -251,7 +305,18 @@ def get_data():
 					"name": "Party Wise Ledger",
 					"doctype": "GL Entry",
 					"is_query_report": True,
-				}
+				},
+				{
+                                        "type": "report",
+                                        "name": "Direct Payment Report",
+                                        "doctype": "Direct Payment",
+                                        "is_query_report": True,
+                                },
+				{
+					 "type": "report",
+					 "name": "Transporter Payment Report",
+					 "doctype": "Transporter Payment",
+					 "is_query_report": True,														      }
 			]
 		},
 		{
@@ -300,6 +365,10 @@ def get_data():
 					"description": _("Define budget for a financial year.")
 				},
 				{
+                                        "type": "doctype",
+                                        "name": "Revenue Target",
+                                },
+				{
 					"type": "report",
 					"name": "Budget Consumption Report",
 					"is_query_report": True,
@@ -307,13 +376,13 @@ def get_data():
 				},
 				{
 					"type": "doctype",
-					"name": "Supplementary Budget Tool",
+					"name": "Supplementary Budget",
 					"description": "Supplementary Budget",
 					"hide_count": True
 				},
 				{
 					"type": "doctype",
-					"name": "Budget Reappropriation Tool",
+					"name": "Budget Reappropiation",
 					"description": "Budget Reappropriation",
 					"hide_count": True
 				},
@@ -330,6 +399,13 @@ def get_data():
 					"doctype": "Reappropriation Details"
 				},
 				{
+                                        "type": "report",
+                                        "label": _("Revenue Achievement"),
+                                        "is_query_report": True,
+                                        "name": "Revenue Target",
+                                        "doctype": "Revenue Target",
+                                },
+				{
 					"type": "report",
 					"is_query_report": True,
 					"name": "Committed Budget Report",
@@ -337,6 +413,28 @@ def get_data():
 				}
 			]
 		},
+		{
+                        "label": _("Account Setup"),
+                        "icon": "icon-cog",
+                        "items": [
+                                {
+                                        "type": "doctype",
+                                        "name": "Accounts Settings",
+                                        "description": _("Default settings for accounting transactions.")
+                                },
+                                {
+                                        "type": "doctype",
+                                        "name": "HR Accounts Settings",
+                                        "description": _("HR Account Settings")
+                                },
+                                {
+                                        "type": "doctype",
+                                        "name": "Production Account Settings",
+                                        "description": _("Account setting for production module")
+                                },
+                        ]
+                },
+
 		{
 			"label": _("Setup"),
 			"icon": "icon-cog",
@@ -434,11 +532,24 @@ def get_data():
 					"is_query_report": True
 				},
 				{
+                                        "type": "report",
+                                        "name": "Fixed Deposit Report",
+                                        "doctype": "Fixed Deposit",
+                                        "is_query_report": True
+                                },
+				{
 					"type": "report",
 					"is_query_report": True,
 					"name": "Customer Credit Balance",
 					"doctype": "Customer"
+				},
+				{
+				    	"type": "report",
+					"is_query_report": True,
+					"name": "Overtime Report",
+					"doctype": "Overtime Application"
 				}
+
 			]
 		},
 	]

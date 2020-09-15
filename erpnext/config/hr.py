@@ -86,6 +86,18 @@ def get_data():
 					"description":_("Allocate leaves for the year."),
 					"hide_count": True
 				},
+                                {
+					"type": "doctype",
+					"name": "Leave Adjustment",
+					"label": _("Leave Adjustment Tool"),
+					"description":_("Adjust leave allocations.")
+				},
+				{
+                                        "type": "doctype",
+                                        "name": "Carry Forward Entry",
+                                        "label": _("Carry Forward Entry"),
+                                        "description":_("Forward CL balances.")
+                                },
 			]
 		},
 		{
@@ -178,16 +190,35 @@ def get_data():
 					"name": "Expense Claim",
                                         "label": _("Expense Claim"),
 				},
+				 {
+                                        "type": "doctype",
+                                        "name": "Overtime Application",
+                                        "label": _("Overtime Application"),
+                                        "description": _("Overtime Application"),
+                                },
+                                {
+                                        "type": "doctype",
+                                        "name": "Employee Benefits",
+                                        "label": _("Process Employee Benefits"),
+                                },
+			 	{
+				 	"type": "doctype",
+					"name": "Salary Advance",
+					"label": _("Salary Advance"),
+				},
+
 			]
 		},
                 {
 			"label": _("Training & Development"),
 			"items": [
 				{
-					"type": "doctype",
-					"name": "Training And Development",
-					"description": _("Traning & Development Master."),
-				},                  
+				"type": "doctype",
+				"name": "Training Records",
+				"description":_("Training And Development"),
+				"label": _("Training And Development")
+				},
+
 			]
 		},
 		{
@@ -210,6 +241,13 @@ def get_data():
 					"label": _("MPI Target Setting"),
 					"description": _("MPI Target Setup")
 				},
+				{
+					"type": "doctype",
+					"name": "Assign Supervisor",
+					"label": _("Assign Supervisor Tool"),
+					"description": _("Bulk Assign of Suvervisor")
+				},
+
 			]
 		},
 		{
@@ -257,12 +295,46 @@ def get_data():
                                         "label": _("Salary Tax & Health Contribution Report"),
 					"doctype": "Salary Slip"
 				},
-			]
+				{
+                                        "type" : "report",
+                                        "is_query_report": True,
+                                        "name": "Salary Payable Report",
+                                        "label": _("Salary Payable Report"),
+                                        "doctype": "Salary Slip"
+                                },
+				{
+					"type" : "report",
+					"is_query_report": True,
+					"name": "LTC Process Report",
+					"label": _("LTC, PVBA, BONUS Report"),
+					"doctype": "Leave Travel Concession"
+				},
+				{
+                                        "type" : "report",
+                                        "is_query_report": True,
+                                        "name": "Salary Increment",
+                                        "label": _("Salary Increment Report"),
+                                        "doctype": "Salary Increment"
+                                },
+				
+				]
 		},
                 {
 			"label": _("Other Reports"),
 			"icon": "icon-list",
 			"items": [
+                                {
+					"type": "report",
+					"is_query_report": True,
+					"name": "Travel Report",
+					"doctype": "Travel Claim"
+				},
+				{
+					"type": "report",
+					"is_query_report": True,
+					"name": "Overtime Report",
+					"doctype": "Overtime Application"
+				},
                                 {
 					"type": "report",
 					"is_query_report": True,
@@ -293,6 +365,7 @@ def get_data():
 					"name": "Employee Information",
 					"doctype": "Employee"
 				},
+
 				{
 					"type": "report",
 					"is_query_report": True,
@@ -305,7 +378,16 @@ def get_data():
 					"name": "Salary Tax Report",
                                         "label": "RRCO Tax Slab Details",
 					"doctype": "Salary Tax"
+				},
+				{
+					"type": "report",
+					"is_query_report": True,
+					"name": "Summarized Employee Report",
+					"label": "Summarized Employee Report",
+					"doctype": "Employee"
 				}
+
+
 			]
 		}
 	]

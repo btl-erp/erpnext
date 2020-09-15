@@ -1,5 +1,12 @@
 // Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 // License: GNU General Public License v3. See license.txt
+/*
+--------------------------------------------------------------------------------------------------------------------------
+Version          Author          CreatedOn          ModifiedOn          Remarks
+------------ --------------- ------------------ -------------------  -----------------------------------------------------
+1.0.190404       SHIV		                       2019/04/04         Party type Equipment added.
+--------------------------------------------------------------------------------------------------------------------------                                                                          
+*/
 
 frappe.provide("erpnext.accounts");
 frappe.provide("erpnext.journal_entry");
@@ -101,10 +108,21 @@ erpnext.accounts.JournalEntry = frappe.ui.form.Controller.extend({
 
 		me.frm.set_query("party_type", "accounts", function(doc, cdt, cdn) {
 			return {
-				filters: {"name": ["in", ["Customer", "Supplier","Employee", "Vehicle"]]}
+				filters: {"name": ["in", ["Customer", "Supplier", "Employee", "Vehicle", "Equipment"]]}
 			}
 		});
-
+		/*if (me.frm.party_type == "Employee")
+		{
+		me.frm.set_query("party", "accounts", function(doc, cdt, cdn) {
+                        return {
+                                filters: {
+                                        company: me.frm.doc.company,
+                                        status: "Active"
+                                }
+                        };
+                })
+		};
+		*/
 		me.frm.set_query("reference_name", "accounts", function(doc, cdt, cdn) {
 			var jvd = frappe.get_doc(cdt, cdn);
 
@@ -369,6 +387,9 @@ frappe.ui.form.on("Journal Entry Account", {
 				}
 			});
 		}
+		if(d.party_type === "Employee"){
+			text()	
+		}
 	},
 
 	account: function(frm, dt, dn) {
@@ -596,4 +617,15 @@ frappe.call({
 });
 
      }
+})
+
+text = cur_frm.set_query("party", "accounts", function(doc, cdt, cdn) {
+	var d = locals[cdt][cdn];
+	if(d.party_type == "Employee"){
+	return{
+		filters: [
+			['Employee', 'status', '=', 'Active']
+		]
+	}}
+
 })

@@ -16,8 +16,6 @@ from erpnext.accounts.utils import get_account_currency
 from erpnext.stock.doctype.delivery_note.delivery_note import update_billed_amount_based_on_so
 from erpnext.accounts.doctype.asset.depreciation \
 	import get_disposal_account_and_cost_center, get_gl_entries_on_asset_disposal
-from frappe.model.naming import make_autoname
-from erpnext.custom_autoname import get_auto_name
 from erpnext.custom_utils import check_uncancelled_linked_doc, check_future_date
 
 form_grid_templates = {
@@ -43,9 +41,6 @@ class SalesInvoice(SellingController):
 			'overflow_type': 'billing'
 		}]
 
-	def autoname(self):
-		self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
-
 	def set_indicator(self):
 		"""Set indicator for portal"""
 		if self.outstanding_amount > 0:
@@ -56,6 +51,11 @@ class SalesInvoice(SellingController):
 			self.indicator_title = _("Paid")
 
 	def validate(self):
+		total = 0
+                for a in self.get("payment_deduction_or_lost"):
+                        total += flt(a.amount)
+                self.charges_total = total
+
 		super(SalesInvoice, self).validate()
 		self.validate_posting_time()
 		self.so_dn_required()
@@ -529,7 +529,8 @@ class SalesInvoice(SellingController):
 		self.make_item_gl_entries(gl_entries)
 		
 		self.make_advance_gl_entry(gl_entries)
-		
+	
+		self.other_charge_gl_entry(gl_entries)	
 		# merge gl entries before adding pos entries
 		gl_entries = merge_similar_entries(gl_entries)
 
@@ -539,6 +540,36 @@ class SalesInvoice(SellingController):
 		self.make_write_off_gl_entry(gl_entries)
 
 		return gl_entries
+
+	def other_charge_gl_entry(self, gl_entries):
+        
+		for a in self.get("payment_deduction_or_lost"):
+                	if flt(a.amount) and a.account:
+                        	accounts = get_account_currency(a.account)
+                        
+                        	gl_entries.append(
+                                	self.get_gl_dict({
+                                        	"account": self.debit_to,
+                                        	"party_type": "Customer",
+                                        	"party": self.customer,
+                                        	"against": accounts,
+                                        	"debit": a.amount,
+                                        	"debit_in_account_currency": a.amount,
+                                        	"against_voucher": self.name,
+                                        	"against_voucher_type": self.doctype,
+						"cost_center": a.cost_center
+                                	}, accounts)
+                        	)
+                        	gl_entries.append(
+                                	self.get_gl_dict({
+                                        	"account": a.account,
+                                        	"credit": a.amount,
+                                        	"credit_in_account_currency": a.amount,
+                                        	"cost_center": a.cost_center
+                                	}, accounts)
+                       	 	)
+
+
 
 	def make_customer_gl_entry(self, gl_entries):
 		if self.grand_total:
@@ -556,7 +587,8 @@ class SalesInvoice(SellingController):
 					"debit_in_account_currency": grand_total_in_company_currency \
 						if self.party_account_currency==self.company_currency else self.grand_total,
 					"against_voucher": self.return_against if cint(self.is_return) else self.name,
-					"against_voucher_type": self.doctype
+					"against_voucher_type": self.doctype,
+					"cost_center": self.cost_center
 				}, self.party_account_currency)
 			)
 		
@@ -574,7 +606,7 @@ class SalesInvoice(SellingController):
 							if account_currency==self.company_currency else flt(tax.tax_amount_after_discount_amount),
 						"cost_center": tax.cost_center
 					}, account_currency)
-				)
+					)
 
 	def make_item_gl_entries(self, gl_entries):
 		# income account gl entries
@@ -661,7 +693,8 @@ class SalesInvoice(SellingController):
 									if account_currency==self.company_currency else (item.abnormal_loss_amt * self.conversion_rate, self.precision("grand_total")) ,
 								#"cost_center": item.cost_center
 								"against_voucher": self.return_against if cint(self.is_return) else self.name,
-								"against_voucher_type": self.doctype
+								"against_voucher_type": self.doctype,
+								"cost_center": item.cost_center
 							}, account_currency)
 						)
 
@@ -697,6 +730,7 @@ class SalesInvoice(SellingController):
 								"against_voucher_type": self.doctype,
 								"remark": remark,
 								"remarks": remark,
+								"cost_center": item.cost_center
 							}, account_currency)
 						)
 
@@ -722,6 +756,7 @@ class SalesInvoice(SellingController):
 							else payment_mode.amount,
 						"against_voucher": self.return_against if cint(self.is_return) else self.name,
 						"against_voucher_type": self.doctype,
+						"cost_center": self.cost_center
 					}, self.party_account_currency)
 				)
 
@@ -731,6 +766,7 @@ class SalesInvoice(SellingController):
 						"account": payment_mode.account,
 						"against": self.customer,
 						"debit": payment_mode.base_amount,
+						"cost_center": self.cost_center,
 						"debit_in_account_currency": payment_mode.base_amount \
 							if payment_mode_account_currency==self.company_currency else payment_mode.amount
 					}, payment_mode_account_currency)
@@ -749,7 +785,8 @@ class SalesInvoice(SellingController):
 						"debit_in_account_currency": flt(self.base_change_amount) \
 							if self.party_account_currency==self.company_currency else flt(self.change_amount),
 						"against_voucher": self.return_against if cint(self.is_return) else self.name,
-						"against_voucher_type": self.doctype
+						"against_voucher_type": self.doctype,
+						"cost_center": self.cost_center
 					}, self.party_account_currency)
 				)
 				
@@ -757,7 +794,8 @@ class SalesInvoice(SellingController):
 					self.get_gl_dict({
 						"account": self.account_for_change_amount,
 						"against": self.customer,
-						"credit": self.base_change_amount
+						"credit": self.base_change_amount,
+						"cost_center": self.cost_center
 					})
 				)
 			else:
@@ -814,6 +852,7 @@ class SalesInvoice(SellingController):
 					"credit_in_account_currency": allocated_amount, 
 					"against_voucher": self.return_against if cint(self.is_return) else self.name,
 					"against_voucher_type": self.doctype,
+					"cost_center": a.advance_cost_center
 				}, advance_account_currency)
 			)
 			gl_entries.append(

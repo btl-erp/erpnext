@@ -265,10 +265,24 @@ def get_data():
 			"type": "list"
 		},
 		{
+			"module_name": "Production",
+			"color": "#DE2B37",
+			"icon": "octicon octicon-mortar-board",
+			"type": "module",
+			"label": _("Production")
+		},
+		{
 			"module_name": "Schools",
 			"color": "#DE2B37",
 			"icon": "octicon octicon-mortar-board",
 			"type": "module",
 			"label": _("Schools")
-		}
+		},
+		{
+			"module_name": "Management Dashboard",
+			"color": "#c0392b",
+			"icon": "octicon octicon-broadcast",
+			"type": "module",
+			"label": _("Management Dashboard")												                },
+
 	]

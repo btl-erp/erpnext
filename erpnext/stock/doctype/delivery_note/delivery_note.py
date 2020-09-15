@@ -11,8 +11,6 @@ import frappe.defaults
 from frappe.model.mapper import get_mapped_doc
 from erpnext.controllers.selling_controller import SellingController
 from frappe.desk.notifications import clear_doctype_notifications
-from frappe.model.naming import make_autoname
-from erpnext.custom_autoname import get_auto_name
 from erpnext.custom_utils import check_uncancelled_linked_doc, check_future_date
 
 form_grid_templates = {
@@ -63,9 +61,6 @@ class DeliveryNote(SellingController):
 			'extra_cond': """ and exists (select name from `tabDelivery Note` where name=`tabDelivery Note Item`.parent and is_return=1)"""
 		}]
 
-	def autoname(self):
-		self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
-
 	def before_print(self):
 		def toggle_print_hide(meta, fieldname):
 			df = meta.get_field(fieldname)
@@ -109,7 +104,7 @@ class DeliveryNote(SellingController):
 		self.validate_warehouse()
 		self.validate_uom_is_integer("stock_uom", "qty")
 		self.validate_with_previous_doc()
-
+		self.per_delivered = 100
 		from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 		make_packing_list(self)
 
@@ -194,6 +189,9 @@ class DeliveryNote(SellingController):
 		self.update_prevdoc_status()
 		self.update_billing_status()
 
+		if self.is_return:
+			self.dupdate_return_status()
+
 		if not self.is_return:
 			self.check_credit_limit()
 
@@ -217,6 +215,28 @@ class DeliveryNote(SellingController):
 		self.cancel_packing_slips()
 
 		self.make_gl_entries_on_cancel()
+		if self.is_return:
+			self.dupdate_return_status()
+
+	def dupdate_return_status(self):
+		actual_qty = frappe.db.sql("""
+				select dni.item_code, sum(ifnull(dni.qty,0)) as qty from `tabDelivery Note` dn, `tabDelivery Note Item` dni
+				where dn.name = dni.parent and dn.docstatus =1 and dn.name = '{0}' group by dni.item_code
+			""".format(self.return_against), as_dict = 1)
+		returned_qty = frappe.db.sql("""
+				select dni.item_code, sum(ifnull(dni.qty,0)) as qty from `tabDelivery Note` dn, `tabDelivery Note Item` dni
+				where dn.name = dni.parent and dn.docstatus =1 and dn.return_against = '{0}' group by dni.item_code
+			""".format(self.return_against), as_dict =1)
+	
+			
+		ref_qty = actual_qty and actual_qty[0].qty or 0.0
+		ret_qty = returned_qty and -flt(returned_qty[0].qty) or 0.0
+		per_delivered = ((ref_qty - ret_qty)/ref_qty)*100
+		frappe.db.sql(""" update `tabDelivery Note` set per_delivered = {0} where name = '{1}'""".format(per_delivered, self.name))
+		frappe.db.sql("""update `tabDelivery Note` set per_delivered  = {0} where name = '{1}'""".format(per_delivered, self.return_against))
+		target = frappe.get_doc("Delivery Note", self.return_against)
+		target.set_status(update=True)
+		return per_delivered
 
 	def check_credit_limit(self):
 		from erpnext.selling.doctype.customer.customer import check_credit_limit
@@ -383,6 +403,9 @@ def make_sales_invoice(source_name, target_doc=None):
 	doc = get_mapped_doc("Delivery Note", source_name, 	{
 		"Delivery Note": {
 			"doctype": "Sales Invoice",
+			"field_map": {
+				"naming_series": "naming_series",
+			},
 			"validation": {
 				"docstatus": ["=", 1]
 			}

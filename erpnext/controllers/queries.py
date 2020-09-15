@@ -322,7 +322,7 @@ def get_account_list(doctype, txt, searchfield, start, page_len, filters):
 
 @frappe.whitelist()
 def get_income_account(doctype, txt, searchfield, start, page_len, filters):
-	from erpnext.controllers.queries import get_match_cond
+	#from erpnext.controllers.queries import get_match_cond
 
 	# income account can be any Credit account,
 	# but can also be a Asset account with account_type='Income Account' in special circumstances.
@@ -334,8 +334,7 @@ def get_income_account(doctype, txt, searchfield, start, page_len, filters):
 		condition += "and tabAccount.company = %(company)s"
 
 	return frappe.db.sql("""select tabAccount.name from `tabAccount`
-			where (tabAccount.report_type = "Profit and Loss"
-					or tabAccount.account_type in ("Income Account", "Temporary"))
+			where tabAccount.account_type = 'Income Account'
 				and tabAccount.is_group=0
 				and tabAccount.`{key}` LIKE %(txt)s
 				{condition} {match_condition}
@@ -348,8 +347,9 @@ def get_income_account(doctype, txt, searchfield, start, page_len, filters):
 
 @frappe.whitelist()
 def get_expense_account(doctype, txt, searchfield, start, page_len, filters):
-	from erpnext.controllers.queries import get_match_cond
-
+	#from erpnext.controllers.queries import get_match_cond
+	start = 0
+	page_len = 1000
 	if not filters: filters = {}
 
 	condition = ""
@@ -357,10 +357,8 @@ def get_expense_account(doctype, txt, searchfield, start, page_len, filters):
 		condition += "and tabAccount.company = %(company)s"
 
 	return frappe.db.sql("""select tabAccount.name from `tabAccount`
-		where (tabAccount.report_type = "Profit and Loss"
-				or tabAccount.account_type in ("Expense Account", "Fixed Asset", "Temporary"))
+		where tabAccount.account_type in ('Expense Account', 'Fixed Asset')
 			and tabAccount.is_group=0
-			and tabAccount.docstatus!=2
 			and tabAccount.{key} LIKE %(txt)s
 			{condition} {match_condition}"""
 		.format(condition=condition, key=frappe.db.escape(searchfield),
@@ -368,3 +366,29 @@ def get_expense_account(doctype, txt, searchfield, start, page_len, filters):
 			'company': filters.get("company", ""),
 			'txt': "%%%s%%" % frappe.db.escape(txt)
 		})
+
+def get_cop_list(doctype, txt, searchfield, start, page_len, filters):
+        if not filters.get("branch") or not filters.get("item_code") or not filters.get("posting_date"):
+                frappe.throw("Select Item Code or Branch or Posting Date")
+        return frappe.db.sql("select a.parent, b.item_code, b.cop_amount from `tabCOP Branch` a, `tabCOP Rate Item` b where a.parent = b.parent and a.branch = %s and b.item_code = %s and exists (select 1 from `tabCost of Production` where name = a.parent and %s between from_date and to_date)", (filters.get("branch"), filters.get("item_code"), filters.get("posting_date")))
+
+
+
+#returns equipment_number
+def get_equipment_no(doctype,txt, searchfield, start, page_len, filters):
+	return frappe.db.sql("select equipment_number  from `tabEquipment` where is_disabled != 1")
+
+@frappe.whitelist()
+def filter_branch_cost_center(doctype, txt, searchfield, start, page_len, filters):
+        if not filters.get("branch"):
+                frappe.throw("Select Branch First")
+        return frappe.db.sql("select cost_center from `tabBranch` where name = %s", filters.get("branch"))
+
+
+@frappe.whitelist()
+def filter_branch_wh(doctype, txt, searchfield, start, page_len, filters):
+        if not filters.get("branch"):
+                frappe.throw("Select Branch First")
+        return frappe.db.sql("select a.parent from `tabWarehouse Branch` a, tabWarehouse b where a.parent = b.name and a.branch = %s and b.disabled = 0", filters.get("branch"))
+
+

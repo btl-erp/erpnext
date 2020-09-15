@@ -151,10 +151,22 @@ erpnext.stock.StockEntry = erpnext.stock.StockController.extend({
 		var d = locals[cdt][cdn];
 		if(doc.initial_stock_templates) {
 			d.conversion_factor = 1;
-		}
+			}
 		d.transfer_qty = flt(d.qty) * flt(d.conversion_factor);
+		frappe.model.set_value(cdt, cdn, "received_qty", d.qty);
+		var diff_qty = flt(d.received_qty)-flt(d.qty);
 		this.calculate_basic_amount(d);
+		frappe.model.set_value(cdt, cdn, "basic_rate1", d.basic_rate);
+		frappe.model.set_value(cdt, cdn, "difference_qty", flt(diff_qty))
+		frappe.model.set_value(cdt, cdn, "basic_amount1", flt(diff_qty)*flt(d.basic_rate1));
 	},
+
+	received_qty: function(doc, cdt, cdn) {
+		var d = locals[cdt][cdn];
+		diff_qty = flt(d.received_qty)-flt(d.qty);
+		frappe.model.set_value(cdt, cdn, "difference_qty", flt(diff_qty));
+		frappe.model.set_value(cdt, cdn, "basic_amount1", flt(diff_qty)*flt(d.basic_rate1));
+		},
 
 	production_order: function() {
 		var me = this;
@@ -342,10 +354,14 @@ cur_frm.script_manager.make(erpnext.stock.StockEntry);
 cur_frm.cscript.toggle_related_fields = function(doc) {
 	cur_frm.toggle_enable("from_warehouse", doc.purpose!='Material Receipt');
 	cur_frm.toggle_enable("to_warehouse", doc.purpose!='Material Issue');
-
+	cur_frm.toggle_enable("initial_stock_templates", doc.purpose == 'Material Receipt');
 	cur_frm.fields_dict["items"].grid.set_column_disp("s_warehouse", doc.purpose!='Material Receipt');
 	cur_frm.fields_dict["items"].grid.set_column_disp("t_warehouse", doc.purpose!='Material Issue');
-
+	cur_frm.fields_dict["items"].grid.set_column_disp("issue_to_employee", doc.purpose=='Material Issue');
+	cur_frm.fields_dict["items"].grid.set_column_disp("issued_to", doc.purpose=='Material Issue');
+	cur_frm.fields_dict["items"].grid.set_column_disp("received_qty", doc.purpose=='Material Transfer');
+	cur_frm.fields_dict["items"].grid.set_column_disp("difference_qty", doc.purpose=='Material Transfer');
+	cur_frm.fields_dict["items"].grid.set_column_disp("basic_amount1", doc.purpose=='Material Transfer');
 	cur_frm.cscript.toggle_enable_bom();
 
 	if (doc.purpose == 'Subcontract') {
@@ -556,7 +572,7 @@ frappe.ui.form.on("Stock Entry", "purpose", function(frm){
       }
       if (cur_frm.fields_dict.purpose.value == 'Material Receipt'){
          console.log(cur_frm.fields_dict.purpose.value)
-         cur_frm.fields_dict.naming_series.df.options = "Consumable GR\nCapital Inventory GR\nCoal GR\nDolomite GR\nGypsum GR\nStone GR\nLimestone GR\nBauxite GR\nQuartzite GR\nTalc GR";
+         cur_frm.fields_dict.naming_series.df.options = "Consumable GR\nCapital Inventory GR\nCoal GR\nDolomite GR\nGypsum GR\nStone GR\nLimestone GR\nBauxite GR\nQuartzite GR\nTalc GR\n0-5 mm Dust GR\n10-20 mm Aggregates GR\n40 mm Aggregates GR";
       }
       if (cur_frm.fields_dict.purpose.value == 'Material Transfer'){
          cur_frm.fields_dict.naming_series.df.options = "Inventory Transfer";
@@ -565,3 +581,42 @@ frappe.ui.form.on("Stock Entry", "purpose", function(frm){
       frm.set_df_property("naming_series", "reqd", true)
       refresh_field('naming_series');
 });
+
+frappe.ui.form.on('Stock Entry Detail', {
+        "issue_to_employee": function(frm, cdt, cdn) {
+                frappe.model.set_value(cdt, cdn, "issued_to", '');
+}
+})
+
+frappe.ui.form.on("Stock Entry", {
+        is_write_off_entry:  function(frm) {
+                if(cur_frm.doc.is_write_off_entry && cur_frm.doc.purpose == 'Material Issue'){
+                        frm.set_df_property('remarks', 'reqd', 1)
+                        frm.set_df_property('equipment', 'reqd', 0)
+                }
+                else {
+                        frm.set_df_property('remarks', 'reqd', 0)
+                        frm.set_df_property('equipment', 'reqd', 1)
+                }
+        }
+
+        }
+)
+
+cur_frm.fields_dict['items'].grid.get_field('issued_to').get_query = function(frm, cdt, cdn) {
+        var d = locals[cdt][cdn];
+        if (d.issue_to_employee == "Employee") {
+                return {
+                        filters: [
+                        ['Employee', 'status', '=', 'Active']
+                        ]
+                }
+        }
+        else {
+                return {
+                        filters: [
+                        ['Equipment', 'not_cdcl', '=', 0]
+                        ]
+                }
+        }
+}

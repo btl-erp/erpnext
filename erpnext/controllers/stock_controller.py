@@ -1,5 +1,12 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
+'''
+------------------------------------------------------------------------------------------------------------------------------------------
+Version          Author         Ticket#           CreatedOn          ModifiedOn          Remarks
+------------ --------------- --------------- ------------------ -------------------  -----------------------------------------------------
+1.0.190401       SHIV		                                     2019/04/01         Refined process for making SL and GL entries
+------------------------------------------------------------------------------------------------------------------------------------------                                                                          
+'''
 
 from __future__ import unicode_literals
 import frappe
@@ -35,7 +42,6 @@ class StockController(AccountsController):
 
 		sle_map = self.get_stock_ledger_details()
 		voucher_details = self.get_voucher_details(default_expense_account, default_cost_center, sle_map)
-
 		gl_list = []
 		warehouse_with_no_account = []
 		
@@ -45,7 +51,6 @@ class StockController(AccountsController):
 				for sle in sle_list:
 					if warehouse_account.get(sle.warehouse):
 						# from warehouse account
-
 						self.check_expense_account(detail)
 
 						gl_list.append(self.get_gl_dict({
@@ -74,13 +79,32 @@ class StockController(AccountsController):
 
 		return process_gl_map(gl_list)
 
+        def validate_warehouse_branch(self, warehouse, branch):
+                if not branch:
+                        frappe.throw("Branch is Mandatory")
+                if not warehouse:
+                        frappe.throw("Warehouse is Mandatory")
+                branches = frappe.db.sql("select parent from `tabWarehouse Branch` where branch = %s", branch, as_dict=1)
+                for a in branches:
+                        if a.parent == warehouse:
+                                return
+                frappe.throw("Warehouse <b>" + str(warehouse) + "</b> doesn't belong to <b>" + str(branch) + "</b>")
+
 	def get_voucher_details(self, default_expense_account, default_cost_center, sle_map):
 		if self.doctype == "Stock Reconciliation":
 			return [frappe._dict({ "name": voucher_detail_no, "expense_account": default_expense_account,
 				"cost_center": default_cost_center }) for voucher_detail_no, sle in sle_map.items()]
 		else:
-			details = self.get("items")
+			""" ++++++++++ Ver 1.0.190401 Begins ++++++++++ """
+			# Following line commented by SHIV on 2019/04/01
+			#details = self.get("items")
 
+			# Following code added by SHIV on 2019/04/01
+			details = list(self.get("items"))
+                        if self.doctype == "Production":
+                                details.extend(self.get("raw_materials"))
+                        """ ++++++++++ Ver 1.0.190401 Ends ++++++++++++ """
+                        
 			if default_expense_account or default_cost_center:
 				for d in details:
 					if default_expense_account and not d.get("expense_account"):
@@ -249,6 +273,18 @@ class StockController(AccountsController):
 			"target_field": "billed_amt",
 			"name": self.name,
 		}, update_modified)
+
+        def validate_warehouse_branch(self, warehouse, branch):
+                if not branch:
+                        frappe.throw("Branch is Mandatory")
+                if not warehouse:
+                        frappe.throw("Warehouse is Mandatory")
+                branches = frappe.db.sql("select parent from `tabWarehouse Branch` where branch = %s", branch, as_dict=1)
+                for a in branches:
+                        if a.parent == warehouse:
+                                return
+                frappe.throw("Warehouse <b>" + str(warehouse) + "</b> doesn't belong to <b>" + str(branch) + "</b>")
+
 
 def update_gl_entries_after(posting_date, posting_time, for_warehouses=None, for_items=None,
 		warehouse_account=None):

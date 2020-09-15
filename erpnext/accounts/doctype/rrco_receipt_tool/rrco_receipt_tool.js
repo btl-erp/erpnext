@@ -14,6 +14,7 @@ frappe.ui.form.on("RRCO Receipt Tool", {
 			frappe.call({
 				method: "erpnext.accounts.doctype.rrco_receipt_tool.rrco_receipt_tool.updateSalaryTDS",
 				args: {
+					"purpose": frm.doc.purpose,
 					"month": frm.doc.month,
 					"fiscal_year": frm.doc.fiscal_year,
 					"receipt_number":frm.doc.receipt_number,
@@ -64,7 +65,7 @@ frappe.ui.form.on("RRCO Receipt Tool", {
 			frappe.call({
 				method: "erpnext.accounts.doctype.rrco_receipt_tool.rrco_receipt_tool.updatePBVA",
 				args: {
-					"month": frm.doc.purpose,
+					"purpose": frm.doc.purpose,
 					"fiscal_year": frm.doc.bonus_and_pbva_fy,
 					"receipt_number":frm.doc.receipt_number,
 					"receipt_date":frm.doc.receipt_date,
@@ -128,6 +129,7 @@ erpnext.rrco_receipt_tool = {
 			frappe.call({
 				method: "erpnext.accounts.doctype.rrco_receipt_tool.rrco_receipt_tool.get_invoices",
 				args: {
+				   "purpose": frm.doc.purpose,
 				   "start_date":frm.doc.start_date,
 				   "end_date":frm.doc.end_date,
 				   "tds_rate": tds_rate

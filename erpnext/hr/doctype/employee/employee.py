@@ -4,14 +4,16 @@
 from __future__ import unicode_literals
 import frappe
 
-from frappe.utils import getdate, validate_email_add, today, add_years
+from frappe.utils import flt, getdate, validate_email_add, today, add_years
 from frappe.model.naming import make_autoname
 from frappe import throw, _
 import frappe.permissions
 from frappe.model.document import Document
 from frappe.model.mapper import get_mapped_doc
 from erpnext.utilities.transaction_base import delete_events
-
+from erpnext.custom_utils import get_year_start_date, get_year_end_date, round5, check_future_date
+from frappe.utils.data import get_first_day, get_last_day, add_days
+from frappe.utils import flt, cint
 
 class EmployeeUserDisabledError(frappe.ValidationError):
 	pass
@@ -44,20 +46,37 @@ class Employee(Document):
 		if self.user_id:
 			self.validate_for_enabled_user_id()
 			self.validate_duplicate_user_id()
+			self.toggle_user_enable()
 		else:
 			existing_user_id = frappe.db.get_value("Employee", self.name, "user_id")
 			if existing_user_id:
 				frappe.permissions.remove_user_permission(
 					"Employee", self.name, existing_user_id)
+		
+		# Added by Tashi to update the employee details in Salary Structure upon changing the employee master
+		'''if self.status != "Left":
+			doc = frappe.get_doc("Salary Structure", {"employee" : self.name, "is_active": "Yes"})
+			doc.save()'''
 
 	def on_update(self):
 		if self.user_id:
 			self.update_user()
 			self.update_user_permissions()
+		#Temporary Employees are not Eligible for CL
+                if self.employment_type != 'Temporary':
+                        self.post_casual_leave()
 
 	def update_user_permissions(self):
+                # Ver 2.0 Begins, by SHIV on 2018/12/26
+                # Branch permission added
+                if self.branch != self.get_db_value("branch") and  self.user_id:
+                        frappe.permissions.remove_user_permission("Branch", self.get_db_value("branch"), self.user_id)
+                frappe.permissions.add_user_permission("Branch", self.branch, self.user_id)
+                # Ver 2.0 Ends
+                
 		frappe.permissions.add_user_permission("Employee", self.name, self.user_id)
 		frappe.permissions.set_user_permission_if_allowed("Company", self.company, self.user_id)
+		
 
 	def update_user(self):
 		# add employee role if missing
@@ -132,7 +151,7 @@ class Employee(Document):
 				ss = frappe.get_doc("Salary Structure", name)
 				if ss:
 					ss.db_set("is_active", "No")
-
+		
 
 	def validate_for_enabled_user_id(self):
 		if not self.status == 'Active':
@@ -150,6 +169,14 @@ class Employee(Document):
 			throw(_("User {0} is already assigned to Employee {1}").format(
 				self.user_id, employee[0]), frappe.DuplicateEntryError)
 
+
+	def toggle_user_enable(self):
+		user = frappe.get_doc("User", self.user_id)
+		if user and self.status == 'Active':
+			user.db_set("enabled", 1)
+		if user and self.status == 'Left':
+			user.db_set("enabled", 0)
+
 	def validate_employee_leave_approver(self):
 		for l in self.get("leave_approvers")[:]:
 			#if l.leave_approver:
@@ -164,6 +191,39 @@ class Employee(Document):
 
 	def on_trash(self):
 		delete_events(self.doctype, self.name)
+
+	def post_casual_leave(self):
+                if not cint(self.casual_leave_allocated):
+                        credits_per_year = frappe.db.get_value("Employee Group Item", {"parent": self.employee_group, "leave_type": 'Casual Leave'}, "credits_per_year")
+
+                        if flt(credits_per_year):
+                                from_date = getdate(self.date_of_joining)
+                                to_date = get_year_end_date(from_date);
+
+                                no_of_months = frappe.db.sql("""
+                                        select (
+                                                case
+                                                        when day('{0}') > 1 and day('{0}') <= 15
+                                                        then timestampdiff(MONTH,'{0}','{1}')+1 
+                                                        else timestampdiff(MONTH,'{0}','{1}')       
+                                                end
+                                                ) as no_of_months
+                                """.format(str(self.date_of_joining),str(add_days(to_date,1))))[0][0]
+
+                                new_leaves_allocated = round5((flt(no_of_months)/12)*flt(credits_per_year))
+                                new_leaves_allocated = new_leaves_allocated if new_leaves_allocated <= flt(credits_per_year) else flt(credits_per_year)
+
+                                if flt(new_leaves_allocated):
+                                        la = frappe.new_doc("Leave Allocation")
+                                        la.employee = self.employee
+                                        la.employee_name = self.employee_name
+                                        la.leave_type = "Casual Leave"
+                                        la.from_date = str(from_date)
+                                        la.to_date = str(to_date)
+                                        la.carry_forward = cint(0)
+                                        la.new_leaves_allocated = flt(new_leaves_allocated)
+                                        la.submit()
+                                        self.db_set("casual_leave_allocated", 1)
 
 def get_timeline_data(doctype, name):
 	'''Return timeline for attendance'''
@@ -201,6 +261,15 @@ def make_salary_structure(source_name, target=None):
 	})
 	target.make_earn_ded_table()
 	return target
+
+
+@frappe.whitelist()
+def get_overtime_rate(employee):
+                basic = frappe.db.sql("select a.amount as basic_pay from `tabSalary Detail` a, `tabSalary Structure` b where a.parent = b.name and a.salary_component = 'Basic Pay' and b.is_active = 'Yes' and b.employee = \'" + str(employee) + "\'", as_dict=True)
+                if basic:
+                        return ((flt(basic[0].basic_pay) * 1.5) / (30 * 8))
+                else:
+                        frappe.throw("No Salary Structure foudn for the employee")
 
 def validate_employee_role(doc, method):
 	# called via User hook

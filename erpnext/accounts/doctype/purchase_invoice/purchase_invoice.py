@@ -58,6 +58,13 @@ class PurchaseInvoice(BuyingController):
 			self.validate_supplier_invoice()
 
 
+                if self.charges:
+			total_charges = 0
+			for c in self.charges:
+				total_charges += c.charges
+
+			self.outstanding_amount = self.outstanding_amount - total_charges
+
 		# validate cash purchase
 		if (self.is_paid == 1):
 			self.validate_cash()
@@ -271,6 +278,7 @@ class PurchaseInvoice(BuyingController):
 						.format(item.purchase_receipt))
 
 	def on_submit(self):
+		self.check_po_closed()
 		self.check_prev_docstatus()
 		self.update_status_updater_args()
 
@@ -297,6 +305,12 @@ class PurchaseInvoice(BuyingController):
 		self.update_fixed_asset()
 		self.consume_budget()
 		self.update_rrco_receipt()
+
+	def check_po_closed(self):
+		for a in self.items:
+			if a.purchase_order:
+				if frappe.db.get_value("Purchase Order", a.purchase_order, "status") == "Closed":
+					frappe.throw("Cannot modify closed purchase order")
 
 	def update_fixed_asset(self):
 		for d in self.get("items"):
@@ -328,6 +342,7 @@ class PurchaseInvoice(BuyingController):
 		self.make_tax_gl_entries(gl_entries)
 		self.make_tds_gl_entry(gl_entries)
 		self.make_advance_gl_entry(gl_entries)
+		self.make_charges_gl_entry(gl_entries)
 
 		gl_entries = merge_similar_entries(gl_entries)
 
@@ -365,6 +380,7 @@ class PurchaseInvoice(BuyingController):
 					"account": self.credit_to,
 					"party_type": "Supplier",
 					"party": self.supplier,
+					"cost_center": self.buying_cost_center,
 					"against": self.against_expense_account,
 					"credit": grand_total_in_company_currency,
 					"credit_in_account_currency": grand_total_in_company_currency \
@@ -373,6 +389,39 @@ class PurchaseInvoice(BuyingController):
 					"against_voucher_type": self.doctype,
 				}, self.party_account_currency)
 			)
+
+        def make_charges_gl_entry(self, gl_entries):
+		if self.charges:
+			for c in self.charges:
+				if c.account:
+					gl_entries.append(
+						self.get_gl_dict({
+							"account": c.account,
+							"against": self.supplier,
+							"party_type": "Supplier",
+							"party": self.supplier,
+							"credit": flt(c.charges),
+							"credit_in_account_currency": flt(c.charges),
+							"cost_center": self.buying_cost_center
+						})
+					)
+					gl_entries.append(
+						self.get_gl_dict({
+							"account": self.credit_to,
+							"party_type": "Supplier",
+							"party": self.supplier,
+							"against": c.account,
+							"debit": flt(c.charges),
+							"debit_in_account_currency": flt(c.charges),
+							"against_voucher": self.return_against if cint(self.is_return) else self.name,
+							"against_voucher_type": self.doctype,
+							"cost_center": self.buying_cost_center,
+						})
+					)
+					
+				else:
+					frappe.throw("Please select an account under Deduction Charges")
+
 
 	def make_item_gl_entries(self, gl_entries):
 		# item gl entries
@@ -688,6 +737,7 @@ class PurchaseInvoice(BuyingController):
 		self.update_project()
 		self.update_fixed_asset()
 		self.cancel_consumed()
+		self.cancel_commit()
 
 	def update_project(self):
 		project_list = []
@@ -752,8 +802,8 @@ class PurchaseInvoice(BuyingController):
 	def consume_budget(self):
 		for item in self.get("items"):
 			expense, cost_center = frappe.db.get_value("Purchase Order Item", item.po_detail, ["budget_account", "cost_center"])
-			if expense != item.expense_account and cost_center != item.cost_center:
-				frappe.throw("Purchase Order and Invoice should have same Cost Center and Budget Account!")
+			if cost_center != item.cost_center:
+				frappe.throw("Purchase Order and Invoice should have same Cost Center")
 			if expense:
 				account_type = frappe.db.get_value("Account", expense, "account_type")
 				if account_type in ("Fixed Asset", "Expense Account"):
@@ -769,10 +819,25 @@ class PurchaseInvoice(BuyingController):
 						"com_ref": item.purchase_order,
 						"date": frappe.utils.nowdate()})
 					consume.submit()
+					
+					#update Committed Budget
+                                        doc = frappe.get_doc("Committed Budget", {"po_no": item.purchase_order, "account": expense, "cost_center": item.cost_center, "item_code" : item.item_code})
+                                        if flt(doc.amount) == flt(item.amount):
+                                                frappe.db.sql(""" update `tabCommitted Budget` set consumed = 1 where po_no = '{0}' and amount = {1} 
+                and account = '{2}' and cost_center ='{3}' and item_code = '{4}'""".format(item.purchase_order, item.amount, expense, item.cost_center, item.item_code))
+                                        if flt(doc.amount) != flt(item.amount):
+                                                frappe.db.sql(""" update `tabCommitted Budget` set consumed = 0, amount = amount - {0} where po_no = '{1}' and account = '{2}' and cost_center ='{3}' and item_code = '{4}'""".format(item.amount, item.purchase_order, expense, item.cost_center, item.item_code))
+
 	
 	#Cancel the consumed budget
 	def cancel_consumed(self):
 		frappe.db.sql("delete from `tabConsumed Budget` where po_no = %s", self.name)
+
+
+	def cancel_commit(self):
+		for item in self.get("items"):
+			expense, cost_center = frappe.db.get_value("Purchase Order Item", item.po_detail, ["budget_account", "cost_center"])
+			frappe.db.sql(""" update `tabCommitted Budget` set consumed = 0 where po_no = '{0}' and account = '{1}' and cost_center ='{2}' and item_code = '{3}'""".format(item.purchase_order, expense, item.cost_center, item.item_code))
 
 	#Update rrco receipt entry if submitted
 	def update_rrco_receipt(self):

@@ -13,6 +13,7 @@ from erpnext.manufacturing.doctype.bom.bom import validate_bom_no
 import json
 from frappe.model.naming import make_autoname
 from erpnext.custom_autoname import get_auto_name
+import time
 
 class IncorrectValuationRateError(frappe.ValidationError): pass
 class DuplicateEntryForProductionOrderError(frappe.ValidationError): pass
@@ -25,8 +26,8 @@ form_grid_templates = {
 }
 
 class StockEntry(StockController):
-	def autoname(self):
-		self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
+	#def autoname(self):
+	#	self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
 
 	def get_feed(self):
 		return _("From {0} to {1}").format(self.from_warehouse, self.to_warehouse)
@@ -43,6 +44,7 @@ class StockEntry(StockController):
 		self.validate_posting_time()
 		self.validate_purpose()
 		self.validate_item()
+		self.check_item_value()
 		self.set_transfer_qty()
 		self.validate_uom_is_integer("uom", "qty")
 		self.validate_uom_is_integer("stock_uom", "transfer_qty")
@@ -52,23 +54,33 @@ class StockEntry(StockController):
 		self.validate_finished_goods()
 		self.validate_with_material_request()
 		self.validate_batch()
-
 		self.set_actual_qty()
 		self.calculate_rate_and_amount(update_finished_item_rate=False)
 
+                
 	def on_submit(self):
 		self.update_stock_ledger()
-
 		from erpnext.stock.doctype.serial_no.serial_no import update_serial_nos_after_submit
 		update_serial_nos_after_submit(self, "items")
 		self.update_production_order()
 		self.validate_purchase_order()
 		self.make_gl_entries()
-
+		self.post_gl_entry()
+                                
 	def on_cancel(self):
 		self.update_stock_ledger()
 		self.update_production_order()
 		self.make_gl_entries_on_cancel()
+
+	def check_item_value(self):
+                if self.items:
+                        for a in self.items:
+                                if a.issued_to and not a.issue_to_employee:
+                                        a.issued_to = ''
+                                if flt(a.qty) == 0 or flt(a.basic_amount) == 0 or flt(a.amount) == 0:
+                                        frappe.throw("Either Quantity or Amount is 0 for Item <b>" + str(a.item_name) + "</b>")
+                else:
+                        frappe.throw("Stock Entry shoould have an Item Entry")
 
 	def validate_purpose(self):
 		valid_purposes = ["Material Issue", "Material Receipt", "Material Transfer", "Material Transfer for Manufacture",
@@ -387,6 +399,20 @@ class StockEntry(StockController):
 					"incoming_rate": flt(d.valuation_rate)
 				}))
 
+		if self.purpose == "Material Transfer":
+			for d in self.get('items'):
+				if flt(d.difference_qty) > 0.0:
+					sl_entries.append(self.get_sl_entries(d, {
+						"warehouse": cstr(d.t_warehouse),
+						"actual_qty": flt(d.difference_qty),
+						"incoming_rate": flt(d.valuation_rate)
+						}))
+				elif flt(d.difference_qty) < 0:
+					frappe.throw("Difference Cannot Be Negative")
+				else:
+					pass
+
+
 		# On cancellation, make stock ledger entry for
 		# target warehouse first, to update serial no values properly
 
@@ -427,6 +453,18 @@ class StockEntry(StockController):
 				}))
 
 		return gl_entries
+	#created so as to store the data in GL Entry
+	def post_gl_entry(self):
+		je = frappe.new_doc("GL Entry")
+		for d in self.get('items'):
+			je.flags.ignore_permissions = 1
+			je.posting_date = self.posting_date
+			je.account = d.t_warehouse,
+			je.cost_center =  d.cost_center,
+			je.debit=  flt(d.basic_amount1),
+			je.account =  d.expense_account,
+			je.cost_center =  d.cost_center,
+			je.credit =  flt(d.basic_amount1)
 
 	def update_production_order(self):
 		def _validate_production_order(pro_doc):

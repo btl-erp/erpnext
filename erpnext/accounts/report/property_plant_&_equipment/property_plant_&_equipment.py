@@ -36,7 +36,7 @@ def get_accounts(filters):
 			"gross_total": g_total,
 			"dep_opening": d_open,
 			"dep_addition": dep.debit,
-			"dep_adjustment": dep_adjust,
+			"dep_adjustment": acc_dep.debit,
 			"dep_total": d_total,
 			"net_block": flt(g_total) - flt(d_total) 
 		}
