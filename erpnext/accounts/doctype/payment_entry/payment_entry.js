@@ -1,5 +1,13 @@
 // Copyright (c) 2016, Frappe Technologies Pvt. Ltd. and contributors
 // For license information, please see license.txt
+/*
+--------------------------------------------------------------------------------------------------------------------------
+Version          Author          CreatedOn          ModifiedOn          Remarks
+------------ --------------- ------------------ -------------------  -----------------------------------------------------
+2.0		          SHIV		                        31/07/2018         Fields party_type, party added under deductions
+--------------------------------------------------------------------------------------------------------------------------                                                                          
+*/
+
 {% include "erpnext/public/js/controllers/accounts.js" %}
 
 frappe.ui.form.on('Payment Entry', {
@@ -20,12 +28,12 @@ frappe.ui.form.on('Payment Entry', {
 
 		var party_account_type = frm.doc.party_type=="Customer" ? "Receivable" : "Payable";
 
-		frm.set_query("paid_from", function() {
+	/*	frm.set_query("paid_from", function() {
 			/*var account_types = in_list(["Pay", "Internal Transfer"], frm.doc.payment_type) ?
 				["Bank", "Cash"] : party_account_type;
 			Show both payables and receivable accounts
 			*/
-			var account_types = ["Payable","Receivable", "Bank", "Cash"]
+	/*		var account_types = ["Payable","Receivable", "Bank", "Cash"]
 
 			return {
 				filters: {
@@ -34,7 +42,7 @@ frappe.ui.form.on('Payment Entry', {
 					"company": frm.doc.company
 				}
 			}
-		});
+		}); */
 
 		frm.set_query("paid_to", function() {
 			/*var account_types = in_list(["Receive", "Internal Transfer"], frm.doc.payment_type) ?
@@ -66,11 +74,22 @@ frappe.ui.form.on('Payment Entry', {
 			return {
 				filters: {
 					"is_group": 0,
+					"is_disabled": 0,
 					"company": frm.doc.company
 				}
 			}
 		});
 
+		// ++++++++++++++++++++ Ver 2.0 BEGINS ++++++++++++++++++++
+		// Following coded added by SHIV on 31/07/2018
+		frm.set_query("party_type", "deductions", function(){
+			return {
+				filters: {"name": ["in", ["Customer", "Supplier","Employee"]]}
+			}
+		});
+		// +++++++++++++++++++++ Ver 2.0 ENDS +++++++++++++++++++++
+
+		
 		frm.set_query("reference_doctype", "references", function() {
 			if (frm.doc.party_type=="Customer") {
 				var doctypes = ["Sales Order", "Sales Invoice", "Journal Entry"];
@@ -91,6 +110,17 @@ frappe.ui.form.on('Payment Entry', {
 		frm.events.hide_unhide_fields(frm);
 		frm.events.set_dynamic_labels(frm);
 		frm.events.show_general_ledger(frm);
+		//Hide cancel button if is bank reconcilled
+		if(frm.doc.clearance_date) {
+			$(document).ready(function(){
+				$(".btn-sm").css("display", "none");
+			});
+		}
+		else {
+			$(document).ready(function(){
+				$(".btn-sm").css("display", "inline");
+			});
+		}
 	},
 
 	hide_unhide_fields: function(frm) {
@@ -128,6 +158,10 @@ frappe.ui.form.on('Payment Entry', {
 				(frm.doc.paid_from_account_currency != company_currency ||
 					frm.doc.paid_to_account_currency != company_currency)));
 
+		// Ver 2.0 Begins, Following code added by SHIV on 03/01/2018
+		frm.toggle_display(["party_exchange_rate", "party_paid_amount"], frm.doc.party_exchange_rate)
+		// Ver 2.0 Ends
+					
 		frm.refresh_fields();
 	},
 
@@ -157,6 +191,9 @@ frappe.ui.form.on('Payment Entry', {
 			"difference_amount"], company_currency);
 
 		setup_field_label_map(["paid_amount"], frm.doc.paid_from_account_currency);
+		// Ver 2.0 Begins, Following code added by SHIV on 03/01/2018
+		setup_field_label_map(["party_paid_amount"], frm.doc.party_currency);
+		// Ver 2.0 Ends
 		setup_field_label_map(["received_amount"], frm.doc.paid_to_account_currency);
 
 		var party_account_currency = frm.doc.payment_type=="Receive" ?
@@ -409,6 +446,13 @@ frappe.ui.form.on('Payment Entry', {
 
 	paid_amount: function(frm) {
 		frm.set_value("base_paid_amount", flt(frm.doc.paid_amount) * flt(frm.doc.source_exchange_rate));
+		
+		// Ver 2.0 Begins, Following code added by SHIV on 03/01/2018
+		if(frm.doc.party_exchange_rate){
+			frm.set_value("party_paid_amount", flt(frm.doc.paid_amount) / flt(frm.doc.party_exchange_rate));
+		}
+		// Ver 2.0 Ends
+		
 		frm.trigger("reset_received_amount");
 	},
 
@@ -439,6 +483,7 @@ frappe.ui.form.on('Payment Entry', {
 			frm.set_value("received_amount", frm.doc.paid_amount);
 			frm.set_value("target_exchange_rate", frm.doc.source_exchange_rate);
 			frm.set_value("base_received_amount", frm.doc.base_paid_amount);
+			frm.set_value("actual_receivable_amount", frm.doc.base_paid_amount - frm.doc.tds_amount);
 		}
 
 		if(frm.doc.payment_type == "Receive")
@@ -637,9 +682,9 @@ frappe.ui.form.on('Payment Entry', {
 		}
 		// Ver 1.0 Ends
 
-		$.each(frm.doc.deductions || [], function(i, d) {
+		/*$.each(frm.doc.deductions || [], function(i, d) {
 			if(d.amount) difference_amount -= flt(d.amount);
-		})
+		})*/
 
 		frm.set_value("difference_amount", difference_amount);
 
@@ -720,6 +765,21 @@ frappe.ui.form.on('Payment Entry', {
 				}
 			})
 		}
+	},
+	tds_amount: function(frm) {
+		frm.set_value("actual_receivable_amount", frm.doc.base_received_amount - frm.doc.tds_amount)
+		cur_frm.refresh_field("actual_receivable_amount")
+		cur_frm.toggle_reqd("tds_account", frm.doc.tds_amount)
+	},
+
+	get_series: function(frm) {
+		return frappe.call({
+			method: "get_series",
+			doc: frm.doc,
+			callback: function(r, rt) {
+				frm.reload_doc();
+			}
+		});
 	}
 });
 
@@ -757,6 +817,12 @@ frappe.ui.form.on('Payment Entry Reference', {
 
 	references_remove: function(frm) {
 		frm.events.set_total_allocated_amount(frm);
+	},
+
+	get_series: function(frm) {
+		console.log(frm.doc.doctype)	
+		console.log(frm.doc.docname)	
+		console.log(frm.doc.branch)	
 	}
 })
 
@@ -767,7 +833,16 @@ frappe.ui.form.on('Payment Entry Deduction', {
 
 	deductions_remove: function(frm) {
 		frm.events.set_difference_amount(frm);
+	},
+
+	// ++++++++++++++++++++ Ver 2.0 BEGINS ++++++++++++++++++++
+	// Following code added by SHIV on 31/07/2018
+	deductions_add: function(frm, cdt, cdn){
+		var child = locals[cdt][cdn];
+		//frappe.model.set_value(cdt, cdn, "party_type", frm.doc.party_type);
+		//frappe.model.set_value(cdt, cdn, "party", frm.doc.party);
 	}
+	// +++++++++++++++++++++ Ver 2.0 ENDS +++++++++++++++++++++
 })
 
 
@@ -820,7 +895,7 @@ frappe.ui.form.on("Payment Entry", "onload", function(frm) {
 
       //make pay_to_recd_from editable
          frm.toggle_reqd("pay_to_recd_from", 1);
-      }
+      } 
 
 })
 
@@ -830,8 +905,21 @@ frappe.ui.form.on("Payment Entry", "onload", function(frm){
         return {
             "filters": [
                 ["status", "!=", "Used"],
-                ["docstatus", "=", "1"]
+                ["docstatus", "=", "1"],
+//                ["branch", "=", frm.doc.branch]
             ]
         }
     });
 });
+
+
+// PL cost center
+//-----------------------
+cur_frm.fields_dict.pl_cost_center.get_query = function(doc) {
+	return{
+		filters:{
+			'is_group': 0,
+			'is_disabled': 0,
+		}
+	}
+}

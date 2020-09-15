@@ -72,6 +72,7 @@ def validate_returned_items(doc):
 	warehouse_mandatory = not (doc.doctype=="Purchase Invoice" or (doc.doctype=="Sales Invoice" and not doc.update_stock))
 
 	items_returned = False
+	self.per_billed = 0.0
 	for d in doc.get("items"):
 		if flt(d.qty) < 0:
 			if d.item_code not in valid_items:
@@ -102,6 +103,8 @@ def validate_returned_items(doc):
 
 				if warehouse_mandatory and not d.get("warehouse"):
 					frappe.throw(_("Warehouse is mandatory"))
+
+
 
 			items_returned = True
 
@@ -146,6 +149,7 @@ def make_return_doc(doctype, source_name, target_doc=None):
 		doc.is_return = 1
 		doc.return_against = source.name
 		doc.ignore_pricing_rule = 1
+		doc.naming_series = source.naming_series
 		if doctype == "Sales Invoice":
 			doc.is_pos = 0
 
@@ -166,8 +170,14 @@ def make_return_doc(doctype, source_name, target_doc=None):
 	def update_item(source_doc, target_doc, source_parent):
 		target_doc.qty = -1* source_doc.qty
 		if doctype == "Purchase Receipt":
-			target_doc.received_qty = -1* source_doc.qty
+			received = frappe.db.sql("select sum(pri.received_qty) from `tabPurchase Receipt` pr, `tabPurchase Receipt Item` pri where pri.parent = pr.name and pri.purchase_order_item = %s and pr.return_against = %s and pr.docstatus = 1 ", (source_doc.purchase_order_item, source_parent.name))
+                        received = received and received[0][0] or 0
+
+			received = flt(source_doc.received_qty) + received
+			target_doc.qty = -1 * received
+			target_doc.received_qty = -1 * received
 			target_doc.purchase_order = source_doc.purchase_order
+			target_doc.purchase_order_item = source_doc.purchase_order_item
 		elif doctype == "Purchase Invoice":
 			target_doc.received_qty = -1* source_doc.qty
 			target_doc.purchase_order = source_doc.purchase_order

@@ -1,5 +1,12 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
+'''
+--------------------------------------------------------------------------------------------------------------------------
+Version          Author          CreatedOn          ModifiedOn          Remarks
+------------ --------------- ------------------ -------------------  -----------------------------------------------------
+2.0		  SHIV		                   28/11/2017         * "Item Rate" should be greater than zero.
+--------------------------------------------------------------------------------------------------------------------------                                                                          
+'''
 
 from __future__ import unicode_literals
 import frappe
@@ -13,6 +20,7 @@ from erpnext.stock.stock_balance import update_bin_qty, get_ordered_qty
 from frappe.desk.notifications import clear_doctype_notifications
 from frappe.model.naming import make_autoname
 from erpnext.custom_autoname import get_auto_name
+from erpnext.custom_utils import check_uncancelled_linked_doc, check_future_date, check_budget_available
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
@@ -34,10 +42,8 @@ class PurchaseOrder(BuyingController):
 			'overflow_type': 'order'
 		}]
 
-	def autoname(self):
-                self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
-
 	def validate(self):
+		check_future_date(self.transaction_date)
 		super(PurchaseOrder, self).validate()
 
 		self.set_status()
@@ -48,6 +54,7 @@ class PurchaseOrder(BuyingController):
 		#self.validate_budget()
 		self.validate_uom_is_integer("uom", "qty")
 		self.validate_uom_is_integer("stock_uom", ["qty", "required_qty"])
+		self.validate_asset_brand()
 
 		self.validate_with_previous_doc()
 		self.validate_for_subcontracting()
@@ -55,29 +62,10 @@ class PurchaseOrder(BuyingController):
 		self.create_raw_materials_supplied("supplied_items")
 		self.set_received_qty_for_drop_ship_items()
 
-	def validate_budget(self):
-		fiscal = frappe.utils.nowdate()[:4]
-		com = frappe.defaults.get_user_default("company")
-		pc_obj = frappe.get_doc('Purchase Common')
-		consumed_budget = pc_obj.get_budget_consumed(fiscal, com);
-		allocated_budget = pc_obj.get_budget_allocated(fiscal, com);
-		committed_budget = pc_obj.get_budget_committed(fiscal, com);
-
-		available_budget = frappe._dict()
-		for cc_acc in allocated_budget:
-			key = str(cc_acc)
-			balance = flt(allocated_budget.get(key)) - flt(consumed_budget.get(key)) - flt(committed_budget.get(key));
-			available_budget[key] = balance;
-
-		itemwise_budget = frappe._dict();
-		for d in self.get("items"):
-			itemwise_budget.setdefault((d.cost_center + " " + d.budget_account), 0)
-			itemwise_budget[(d.cost_center + " " + d.budget_account)] += flt(d.amount)
-
-		for cost_acc, asking_budget in itemwise_budget.items():
-			if flt(asking_budget) > flt(available_budget.get(cost_acc)):
-				frappe.throw(_("Not enough budget in " + cost_acc));
-
+	def validate_asset_brand(self):
+		for a in self.items:
+			if a.item_group == "Fixed Asset" and (not a.brand_name or not a.model_name):
+				frappe.throw("Brand and Model is Mandatory for Fixed Asset")
 
 	def validate_with_previous_doc(self):
 		super(PurchaseOrder, self).validate_with_previous_doc({
@@ -93,6 +81,12 @@ class PurchaseOrder(BuyingController):
 		})
 
 	def validate_minimum_order_qty(self):
+                # Ver 2.0 Begins, following code added by SHIV on 28/11/2017
+                for i in self.items:
+                        if flt(i.qty ) >= 0 and i.rate <= 0:
+                                frappe.throw(_("Row#{0}: Item rate should be greater than zero.").format(i.idx),title="Invalid Value")
+                # Ver 2.0 Ends
+                
 		items = list(set([d.item_code for d in self.get("items")]))
 
 		itemwise_min_order_qty = frappe._dict(frappe.db.sql("""select name, min_order_qty
@@ -212,6 +206,7 @@ class PurchaseOrder(BuyingController):
 		self.commit_budget()
 
 	def on_cancel(self):
+		check_uncancelled_linked_doc(self.doctype, self.name)
 		if self.is_against_so():
 			self.update_status_updater()
 
@@ -272,38 +267,92 @@ class PurchaseOrder(BuyingController):
 	# Update the Committedd Budget for checking budget availability
 	##
 	def commit_budget(self):
-		for a in self.items:
+                for a in self.items:
+			amount = a.base_amount
+			if a.base_net_amount:
+				amount = a.base_net_amount
+
 			bud_obj = frappe.get_doc({
 				"doctype": "Committed Budget",
 				"account": a.budget_account,
 				"cost_center": a.cost_center,
 				"po_no": self.name,
 				"po_date": self.transaction_date,
-				"amount": a.amount,
+				"amount": amount,
+				"company": self.company,
 				"item_code": a.item_code,
+				"poi_name": a.name,
 				"date": frappe.utils.nowdate()
 				})
+			bud_obj.flags.ignore_permissions = 1
 			bud_obj.submit()
 
 	##
 	# Check budget availability in the budget head
 	##
 	def check_budget_available(self):
-		for a in self.items:
-			budget_amount = frappe.db.sql("select ba.budget_amount from `tabBudget` b, `tabBudget Account` ba where b.docstatus = 1 and ba.parent = b.name and ba.account=%s and b.cost_center=%s and b.fiscal_year = %s", (a.budget_account, a.cost_center, str(self.transaction_date)[0:4]), as_dict=True)
-			if budget_amount:
-				consumed = frappe.db.sql("select SUM(cb.amount) as total from `tabCommitted Budget` cb where cb.cost_center=%s and cb.account=%s and cb.po_date between %s and %s", (a.cost_center, a.budget_account, str(self.transaction_date)[0:4] + "-01-01", str(self.transaction_date)[0:4] + "-12-31"), as_dict=True)
-				if consumed:
-					if flt(budget_amount[0].budget_amount) < (flt(consumed[0].total) + flt(a.amount)):
-						frappe.throw("Not enough budget in " + str(a.budget_account) + " under " + str(a.cost_center) + ". Budget exceeded by " + str((flt(consumed[0].total) + flt(a.amount) - flt(budget_amount[0].budget_amount))))
-			else:
-				frappe.throw("There is no budget in " + str(a.budget_account) + " under " + str(a.cost_center))
+		budgets = frappe.db.sql("select cost_center, budget_account, sum(base_net_amount) as base_net_amount, sum(base_amount) as base_amount from `tabPurchase Order Item` where parent = %s group by cost_center, budget_account", self.name, as_dict=True)	
+		for a in budgets:
+			amount = a.base_amount
+			if a.base_net_amount:
+				amount = a.base_net_amount
+			check_budget_available(a.cost_center, a.budget_account, self.transaction_date, amount)
+
 
 	##
 	# Cancel budget check entry
 	##
 	def cancel_budget_entry(self):
 		frappe.db.sql("delete from `tabCommitted Budget` where po_no = %s", self.name)
+
+	def update_per_received(self):
+		frappe.db.sql(""" update `tabPurchase Order`
+				set per_received = round((select sum(if(qty > ifnull(received_qty, 0),
+					ifnull(received_qty, 0), qty)) / sum(qty) *100
+				from `tabPurchase Order Item`
+				where parent = %(name)s), 2)
+				where name = %(name)s """, {"name": self.name})
+
+	##
+        # Update the Committedd Budget for checking budget availability
+        ##
+        def adjust_commit_budget(self, status):
+                if status != "Closed":
+                        frappe.db.sql("delete from `tabCommitted Budget` where closed = 1 and po_no = %s", self.name)
+                        return
+
+                net_additional_charges = 0
+                if self.total_add_ded:
+                        net_additional_charges = flt(self.total_add_ded) / flt(self.total)
+
+                for a in self.items:
+                        balance_amount = billed_amt = 0
+                        amount = flt(a.amount) + (flt(net_additional_charges) * flt(a.amount))
+                        if flt(self.conversion_rate) != 1:
+                                amount = flt(amount) * flt(self.conversion_rate)
+
+
+                        if a.billed_amt:
+                                billed_amt = flt(a.billed_amt)
+                                if flt(self.conversion_rate) != 1:
+                                        billed_amt = flt(a.billed_amt) * flt(self.conversion_rate)     
+                        balance_amount = amount - billed_amt
+
+                        if flt(balance_amount) > 0:
+                                bud_obj = frappe.get_doc({
+                                        "doctype": "Committed Budget",
+                                        "account": a.budget_account,
+                                        "cost_center": a.cost_center,
+                                        "po_no": self.name,
+                                        "po_date": self.transaction_date,
+                                        "amount": -1 * balance_amount,
+                                        "item_code": a.item_code,
+                                        "poi_name": a.name,
+                                        "date": frappe.utils.nowdate(),
+                                        "closed": 1
+                                        })
+                                bud_obj.flags.ignore_permissions = 1
+                                bud_obj.submit()
 
 @frappe.whitelist()
 def close_or_unclose_purchase_orders(names, status):
@@ -340,6 +389,9 @@ def make_purchase_receipt(source_name, target_doc=None):
 	doc = get_mapped_doc("Purchase Order", source_name,	{
 		"Purchase Order": {
 			"doctype": "Purchase Receipt",
+			"field_map": {
+				"naming_series": "naming_series",
+			},
 			"validation": {
 				"docstatus": ["=", 1],
 			}
@@ -376,6 +428,9 @@ def make_purchase_invoice(source_name, target_doc=None):
 	doc = get_mapped_doc("Purchase Order", source_name,	{
 		"Purchase Order": {
 			"doctype": "Purchase Invoice",
+			"field_map": {
+				"naming_series": "naming_series",
+			},
 			"validation": {
 				"docstatus": ["=", 1],
 			}
@@ -402,6 +457,7 @@ def make_stock_entry(purchase_order, item_code):
 	purchase_order = frappe.get_doc("Purchase Order", purchase_order)
 
 	stock_entry = frappe.new_doc("Stock Entry")
+	stock_entry.branch = purchase_order.branch
 	stock_entry.purpose = "Subcontract"
 	stock_entry.purchase_order = purchase_order.name
 	stock_entry.supplier = purchase_order.supplier
@@ -420,6 +476,7 @@ def update_status(status, name):
 	po = frappe.get_doc("Purchase Order", name)
 	po.update_status(status)
 	po.update_delivered_qty_in_sales_order()
+	po.adjust_commit_budget(status)
 
 @frappe.whitelist()
 def get_budget_account(item_code):

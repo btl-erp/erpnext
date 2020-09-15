@@ -7,12 +7,20 @@
  "doctype": "Report", 
  "idx": 0, 
  "is_standard": "Yes", 
- "modified": "2016-06-30 20:29:59.894040", 
+ "modified": "2017-11-22 16:06:28.885960", 
  "modified_by": "Administrator", 
  "module": "Accounts", 
  "name": "TDS Certificate", 
  "owner": "Administrator", 
  "ref_doctype": "Purchase Invoice", 
  "report_name": "TDS Certificate", 
- "report_type": "Script Report"
+ "report_type": "Script Report", 
+ "roles": [
+  {
+   "role": "Administrator"
+  }, 
+  {
+   "role": "Accounts User"
+  }
+ ]
 }

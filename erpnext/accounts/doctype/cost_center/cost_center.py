@@ -5,6 +5,7 @@ from __future__ import unicode_literals
 import frappe
 from frappe import _
 from frappe.utils.nestedset import NestedSet
+from frappe.utils import cint
 
 class CostCenter(NestedSet):
 	nsm_parent_field = 'parent_cost_center'
@@ -16,6 +17,44 @@ class CostCenter(NestedSet):
 
 	def validate(self):
 		self.validate_mandatory()
+		#self.check_cost_center()
+		self.validate_company()
+
+	def validate_company(self):
+		if self.is_company:
+			for a in frappe.db.sql("select name from `tabCost Center` where is_company = 1 and name != %s", self.name, as_dict=1):
+				frappe.throw("{0} already made company cost center".format(a.name))
+
+	def on_update(self):
+		self.create_branch()
+
+	def create_branch(self):
+		if cint(self.is_group) == 1 or cint(self.branch_created) == 1:
+			return
+		company = frappe.defaults.get_defaults().company
+		b = frappe.new_doc("Branch")
+		b.branch = self.cost_center_name.strip()
+		b.cost_center = self.name
+		b.company = self.company
+		b.address = "N.A"
+		b.expense_bank_account = frappe.db.get_value("Company", company, "default_bank_account")
+		b.save()
+		self.create_customer(b.name)
+		self.db_set("branch_created", 1)
+
+	def check_cost_center(self):
+                if self.is_group:
+                        self.branch = ''
+                else:
+                        if not self.branch:
+                                frappe.throw("Non-Group Cost Center should have a Branch linked")
+                        ccs = frappe.db.sql("select name from `tabCost Center` where branch = %s and name != %s", (self.branch, self.name), as_dict=True)
+                        if ccs:
+                                frappe.throw("Branch <b>" + str(self.branch) + "</b> is already linked to Cost Center <b>"+str(ccs[0].name)+"</b>")
+
+	def check_ware_house(self):
+		if not self.is_group and not self.warehouse:
+			frappe.throw("Warehouse is mandatory for non-group cost center")
 
 	def validate_mandatory(self):
 		if self.cost_center_name != self.company and not self.parent_cost_center:
@@ -62,6 +101,14 @@ class CostCenter(NestedSet):
 		else:
 			self.is_group = 1
 			self.save()
+			branch = frappe.db.sql("select name from tabBranch where cost_center = %s", self.name, as_dict=1)
+			if branch:
+				doc = frappe.get_doc("Branch", branch[0].name)
+				doc.delete()
+			customer = frappe.db.sql("select name from tabCustomer where cost_center = %s", self.name, as_dict=1)
+			if customer:
+				doc = frappe.get_doc("Customer", customer[0].name)
+				doc.delete()
 			return 1
 
 	def check_gle_exists(self):
@@ -87,4 +134,26 @@ class CostCenter(NestedSet):
 				" - ".join(newdn.split(" - ")[:-1]))
 		else:
 			super(CostCenter, self).after_rename(olddn, newdn, merge)
+
+	def create_customer(self, branch):
+		if self.name and branch and not self.is_group:
+			cus = frappe.db.get_value("Customer", {"cost_center": self.name}, "name")
+			if not cus:
+				doc = frappe.new_doc("Customer")
+				doc.flags.ignore_permissions = 1
+				doc.customer_name = str(self.cost_center_name.strip()).encode('utf-8')
+				doc.customer_type = "Domestic Customer"
+				doc.customer_group = "Internal"
+				doc.territory = "Bhutan"
+				doc.cost_center = self.name
+				doc.branch = branch
+				doc.save()
+			if cus:
+				customer = frappe.get_doc("Customer", cus)
+				customer.flags.ignore_permissions = 1
+				customer.branch = branch
+				customer.save()
+
+				if self.is_disabled:
+					customer.db_set("disabled", 1)
 

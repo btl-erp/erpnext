@@ -2,6 +2,10 @@
 // License: GNU General Public License v3. See license.txt
 
 frappe.provide("erpnext.item");
+cur_frm.add_fetch('item_group', 'default_income_account', 'income_account');
+cur_frm.add_fetch('item_group', 'default_expense_account', 'expense_account');
+cur_frm.add_fetch('item_group', 'default_cost_center', 'buying_cost_center');
+cur_frm.add_fetch('item_group', 'default_cost_center', 'selling_cost_center');
 
 frappe.ui.form.on("Item", {
 	onload: function(frm) {
@@ -16,7 +20,6 @@ frappe.ui.form.on("Item", {
 	},
 
 	refresh: function(frm) {
-
 		if(frm.doc.is_stock_item) {
 			frm.add_custom_button(__("Balance"), function() {
 				frappe.route_options = {
@@ -94,6 +97,14 @@ frappe.ui.form.on("Item", {
 			frm.set_value("is_stock_item", 0);
 		}
 	},
+	
+	asset_category: function() {
+		cur_frm.fields_dict['asset_sub_category'].get_query = function(doc, dt, dn){
+			return {
+					filters:{"parent":doc.asset_category}	
+			}
+		}
+	},
 
 	page_name: frappe.utils.warn_page_name_change,
 
@@ -141,13 +152,13 @@ $.extend(erpnext.item, {
 
 		frm.fields_dict['buying_cost_center'].get_query = function(doc) {
 			return {
-				filters: { "is_group": 0 }
+				filters: { "is_group": 0, "is_disabled": 0 }
 			}
 		}
 
 		frm.fields_dict['selling_cost_center'].get_query = function(doc) {
 			return {
-				filters: { "is_group": 0 }
+				filters: { "is_group": 0, "is_disabled": 0 }
 			}
 		}
 
@@ -370,7 +381,7 @@ cur_frm.add_fetch('tax_type', 'tax_rate', 'tax_rate');
 //custom Scripts
 //Auto populate material code
 cur_frm.cscript.item_group = function(doc) {
-    cur_frm.call({
+    /*cur_frm.call({
         method: "erpnext.stock.stock_custom_functions.get_current_item_code",
         args: {
              item_group: doc.item_group
@@ -378,8 +389,8 @@ cur_frm.cscript.item_group = function(doc) {
         callback: function(r) {
              cur_frm.set_value("item_code", r.message.toString());
         }
-   });
-   if (doc.item_group != 'All Item Groups') {
+   }); */
+   /*if (doc.item_group != 'All Item Groups') {
      cur_frm.fields_dict['expense_account'].get_query = function(doc) {
         return {
                "filters": {
@@ -388,10 +399,59 @@ cur_frm.cscript.item_group = function(doc) {
         }
      }
      refresh_field("expense_account");
-   }
+   }*/
+
+	if(doc.item_group) {
+		if(doc.item_group.match(/Service*/) ) {
+			cur_frm.set_value("is_stock_item", 0)
+			cur_frm.set_value("is_fixed_asset", 0)
+			cur_frm.toggle_display("is_stock_item",  !doc.item_group.match(/Service*/))
+			cur_frm.toggle_display("is_fixed_asset",  !doc.item_group.match(/Service*/))
+		}
+		else {
+			cur_frm.set_value("is_stock_item", 1)
+			cur_frm.set_value("is_fixed_asset", 0)
+			cur_frm.toggle_display("is_stock_item",  !doc.item_group.match(/Service*/))
+			cur_frm.toggle_display("is_fixed_asset",  !doc.item_group.match(/Service*/))
+		}
+	}
 }
 
 //function to assess item_code ranges
 function inBetween(x, min, max) {
   return !(x >= min && x <= max);
 }
+
+frappe.ui.form.on("Item", "refresh", function(frm) {
+    cur_frm.set_query("item_sub_group", function() {
+        return {
+            "filters": {
+		"item_group": frm.doc.item_group,
+            }
+        };
+    });
+
+    cur_frm.set_query("item_sub_group_type", function() {
+        return {
+            "filters": {
+                "item_sub_group": frm.doc.item_sub_group,
+            }
+        };
+    });
+    /*cur_frm.set_query("expense_account", function() {
+        return {
+            "filters": {
+		"is_group": 0,
+            }
+        };
+    });*/ 
+})
+
+cur_frm.set_query("asset_sub_category", function(frm) {
+        return {
+            "filters": {
+                "parent": frm.doc.asset_category,
+            }
+        };
+    });
+

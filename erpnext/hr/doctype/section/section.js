@@ -18,3 +18,4 @@ cur_frm.fields_dict['s_name'].get_query = function(doc, dt, dn) {
                filters:{"d_name": doc.d_name}
        }
 }
+

@@ -4,15 +4,20 @@
 from __future__ import unicode_literals
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, cint
 from erpnext.accounts.report.financial_statements_emines import (get_period_list, get_columns, get_data)
 
 def execute(filters=None):
+	if filters.show_zero_values:
+		show_zero = 1
+	else:
+		show_zero = 0
 	period_list = get_period_list(filters.fiscal_year, filters.periodicity)
 
-	asset = get_data(filters.cost_center, filters.company, "Asset", "Debit", period_list, only_current_fiscal_year=False)
-	liability = get_data(filters.cost_center,filters.company, "Liability", "Credit", period_list, only_current_fiscal_year=False)
-	equity = get_data(filters.cost_center,filters.company, "Equity", "Credit", period_list, only_current_fiscal_year=False)
+	#added filters.business_activity	
+	asset = get_data(filters.cost_center, filters.business_activity, filters.company, "Asset", "Debit", period_list, only_current_fiscal_year=False, show_zero_values=show_zero)
+	liability = get_data(filters.cost_center, filters.business_activity, filters.company, "Liability", "Credit", period_list, only_current_fiscal_year=False, show_zero_values=show_zero)
+	equity = get_data(filters.cost_center,filters.business_activity, filters.company, "Equity", "Credit", period_list, only_current_fiscal_year=False, show_zero_values=show_zero)
 
 	provisional_profit_loss = get_provisional_profit_loss(asset, liability, equity,
 		period_list, filters.company)
@@ -66,13 +71,13 @@ def check_opening_balance(asset, liability, equity):
 	# Check if previous year balance sheet closed
 	opening_balance = 0
 	if asset:
-		opening_balance = flt(asset[0].get("opening_balance", 0))
+		opening_balance = flt(asset[0].get("opening_balance", 0), 2)
 	if liability:
-		opening_balance -= flt(liability[0].get("opening_balance", 0))
+		opening_balance -= flt(liability[0].get("opening_balance", 0), 2)
 	if equity:
-		opening_balance -= flt(asset[0].get("opening_balance", 0))
+		opening_balance -= flt(equity[0].get("opening_balance", 0), 2)
 
-	if opening_balance:
+	if cint(opening_balance):
 		return _("Previous Financial Year is not closed")
 
 

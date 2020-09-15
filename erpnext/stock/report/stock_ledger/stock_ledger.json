@@ -1,16 +1,35 @@
 {
+ "add_total_row": 0, 
  "apply_user_permissions": 1, 
  "creation": "2013-11-29 17:08:23", 
+ "disabled": 1, 
  "docstatus": 0, 
  "doctype": "Report", 
  "idx": 1, 
  "is_standard": "Yes", 
- "modified": "2014-06-03 07:18:17.343291", 
- "modified_by": "Administrator", 
+ "modified": "2018-06-04 16:06:29.910716", 
+ "modified_by": "payma.wangchuk@cdcl.bt", 
  "module": "Stock", 
  "name": "Stock Ledger", 
  "owner": "Administrator", 
  "ref_doctype": "Stock Ledger Entry", 
  "report_name": "Stock Ledger", 
- "report_type": "Script Report"
+ "report_type": "Script Report", 
+ "roles": [
+  {
+   "role": "Administrator"
+  }, 
+  {
+   "role": "Stock Manager"
+  }, 
+  {
+   "role": "Stock User"
+  }, 
+  {
+   "role": "Stock User (other)"
+  }, 
+  {
+   "role": "POL User"
+  }
+ ]
 }

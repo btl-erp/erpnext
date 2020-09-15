@@ -1,3 +1,7 @@
+
+/*
+ *	/home/frappe/erp/apps/erpnext/erpnext/public/css/erpnext.css
+ */
 .erpnext-footer {
   margin: 11px auto;
   text-align: center;
@@ -227,10 +231,10 @@ body[data-route="pos"] .modal-dialog {
 
 #page-desktop {
 	background-size: 70% !important;
-	background-image: url("/files/smcl_logo_background.png");
+	background-image: url("");
 	background-repeat: no-repeat !important;
 	background-position: center !important;
-	background-color: #2b4d80 !important;
+	background-color: #12880b !important;
 }
 
 @media all {
@@ -247,4 +251,19 @@ body[data-route="pos"] .modal-dialog {
 //	display: none !important;
 }
 
+#page-desktop [data-name = 'Explore'] {
+    Display: none;
+}
+
+.media-body {
+	width: 100% !important;
+}
+
+.page-head {
+       // background: url("http://cdcl.erp.bt/files/he_background.png") no-repeat center
+}
+
+#page-desktop {
+ //       background: url("http://cdcl.erp.bt/files/de_background.png") no-repeat center
+}
 

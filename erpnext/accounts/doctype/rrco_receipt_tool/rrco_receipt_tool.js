@@ -14,6 +14,7 @@ frappe.ui.form.on("RRCO Receipt Tool", {
 			frappe.call({
 				method: "erpnext.accounts.doctype.rrco_receipt_tool.rrco_receipt_tool.updateSalaryTDS",
 				args: {
+					"purpose": frm.doc.purpose,
 					"month": frm.doc.month,
 					"fiscal_year": frm.doc.fiscal_year,
 					"receipt_number":frm.doc.receipt_number,
@@ -26,7 +27,9 @@ frappe.ui.form.on("RRCO Receipt Tool", {
 						msgprint("TDS Receipt details updated")
 						cur_frm.set_df_property("update_receipt_date", "read_only", 1)	
 					}
-				}
+				},
+				freeze: true,
+				freeze_message: "Updating Records....Please Wait"
 			})
 		}
 		else {
@@ -51,7 +54,9 @@ frappe.ui.form.on("RRCO Receipt Tool", {
 						msgprint("TDS Receipt details updated")
 						cur_frm.set_df_property("update_bonus", "read_only", 1)	
 					}
-				}
+				},
+				freeze: true,
+				freeze_message: "Updating Records....Please Wait"
 			})
 		}
 		else {
@@ -64,13 +69,15 @@ frappe.ui.form.on("RRCO Receipt Tool", {
 			frappe.call({
 				method: "erpnext.accounts.doctype.rrco_receipt_tool.rrco_receipt_tool.updatePBVA",
 				args: {
-					"month": frm.doc.purpose,
+					"purpose": frm.doc.purpose,
 					"fiscal_year": frm.doc.bonus_and_pbva_fy,
 					"receipt_number":frm.doc.receipt_number,
 					"receipt_date":frm.doc.receipt_date,
 					"cheque_number":frm.doc.cheque_no,
 					"cheque_date":frm.doc.cheque_date
 				},
+				freeze: true,
+				freeze_message: "Updating Records....Please Wait",
 				callback: function(r) {
 					if(r.message == "DONE") {
 						msgprint("TDS Receipt details updated")
@@ -116,10 +123,8 @@ frappe.ui.form.on("RRCO Receipt Tool", {
 
 erpnext.rrco_receipt_tool = {
 	load_invoices: function(frm) {
-		console.log(frm.doc.purpose)
 		if(frm.doc.purpose == "Purchase Invoices" || frm.doc.purpose == "Leave Encashment") {
 		   var tds_rate = frm.doc.tds_rate
-		   console.log(tds_rate)
 		   if(frm.doc.purpose == "Leave Encashment") {
 			tds_rate = '1234567890'
 		   }
@@ -128,6 +133,8 @@ erpnext.rrco_receipt_tool = {
 			frappe.call({
 				method: "erpnext.accounts.doctype.rrco_receipt_tool.rrco_receipt_tool.get_invoices",
 				args: {
+				   "purpose": frm.doc.purpose,
+				   "branch": frm.doc.branch,
 				   "start_date":frm.doc.start_date,
 				   "end_date":frm.doc.end_date,
 				   "tds_rate": tds_rate
@@ -248,6 +255,7 @@ erpnext.InvoiceSelector = Class.extend({
 					method: "erpnext.accounts.doctype.rrco_receipt_tool.rrco_receipt_tool.mark_invoice",
 					args:{
 						"invoice_list":invoice_present,
+						"branch": frm.doc.branch,
 						"receipt_number":frm.doc.receipt_number,
 						"receipt_date":frm.doc.receipt_date,
 						"cheque_number":frm.doc.cheque_no,

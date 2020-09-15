@@ -17,3 +17,15 @@ class CurrencyExchange(Document):
 
 		if self.from_currency == self.to_currency:
 			frappe.throw(_("From Currency and To Currency cannot be same"))
+
+	def on_update(self):
+		doc = frappe.new_doc("Exchange Rate History")
+		doc.from_currency = self.from_currency
+		doc.to_currency = self.to_currency
+		doc.exchange_rate = self.exchange_rate
+		doc.date = frappe.utils.nowdate()
+		doc.company = self.company
+		doc.flags.ignore_permissions = 1
+		doc.submit()
+
+

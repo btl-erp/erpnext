@@ -43,13 +43,13 @@ email_append_to = ["Job Applicant", "Opportunity", "Issue"]
 
 calendars = ["Task", "Production Order", "Leave Application", "Sales Order", "Holiday List"]
 
-fixtures = ["Web Form"]
+fixtures = ["Web Form", "Custom Field", "Property Setter"]
 
 website_generators = ["Item Group", "Item", "Sales Partner", "Job Opening"]
 
 website_context = {
 	"favicon": 	"/assets/erpnext/images/favicon.ico",
-	"splash_image": "/assets/erpnext/images/smcl_logo.gif"
+	"splash_image": "/assets/erpnext/images/loading_icon.gif"
 }
 
 website_route_rules = [
@@ -129,7 +129,8 @@ dump_report_map = "erpnext.startup.report_data_map.data_map"
 before_tests = "erpnext.setup.utils.before_tests"
 
 standard_queries = {
-	"Customer": "erpnext.selling.doctype.customer.customer.get_customer_list"
+	"Business Activity": "erpnext.accounts.doctype.business_activity.business_activity.get_ba_list",
+	"Item Group": "erpnext.setup.doctype.item_group.item_group.get_item_groups",
 }
 
 doc_events = {
@@ -167,28 +168,30 @@ doc_events = {
 scheduler_events = {
 	"hourly": [
 		"erpnext.controllers.recurring_document.create_recurring_documents",
-		"erpnext.stock.doctype.item.item.sync_item_code"
+		"erpnext.stock.doctype.item.item.sync_item_code",
+		"erpnext.assets.doctype.asset.asset.sync_cc_branch",
+		#"erpnext.maintenance.doctype.equipment.equipment.sync_branch_asset",
+		"erpnext.selling.doctype.customer.customer.check_cc_branch",
+		#"erpnext.hr.doctype.leave_application.leave_application.check_cancelled_leaves"    # Ver 2.0.19025, commented by SHIV on 25/02/2019 
 	],
 	"daily": [
-		"erpnext.stock.reorder_item.reorder_item",
+		#"erpnext.stock.reorder_item.reorder_item",
 		"erpnext.setup.doctype.email_digest.email_digest.send",
 		"erpnext.support.doctype.issue.issue.auto_close_tickets",
 		"erpnext.accounts.doctype.fiscal_year.fiscal_year.auto_create_fiscal_year",
 		"erpnext.hr.doctype.employee.employee.send_birthday_reminders",
 		"erpnext.projects.doctype.task.task.set_tasks_as_overdue",
-		"erpnext.accounts.doctype.asset.depreciation.post_depreciation_entries",
-	],
-	"monthly": [
-		"erpnext.hr.hr_custom_functions.post_earned_leaves"
-	],
-	"yearly": [
-		"erpnext.hr.hr_custom_functions.post_casual_leaves"
+		"erpnext.assets.doctype.asset.depreciation.post_depreciation_entries",
+		"erpnext.hr.doctype.officiating_employee.officiating_employee.check_off_exp",
+		"erpnext.maintenance.maintenance_utils.check_hire_end",
+                "erpnext.hr.hr_custom_functions.post_leave_credits",
+		"erpnext.custom_functions.check_pending_approvers"
 	],
 }
 
 default_mail_footer = """<div style="text-align: center;">
 	<a style="color: #8d99a6;">
-		Sent via eMines at SMCL 
+		Sent via <b>ERPNext</b> 
 	</a>
 </div>"""
 

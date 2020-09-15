@@ -1,5 +1,5 @@
 {%
-	if (report.columns.length > 8) {
+	if (report.columns.length > 9) {
 		frappe.throw(__("Too many columns. Export the report and print it using a spreadsheet application."));
 	}
 %}
@@ -12,6 +12,9 @@
 	.financial-statements-blank-row td {
 		height: 37px;
 	}
+	.print-format td {
+            vertical-align: middle !important;
+        }
 </style>
 
 <h2 class="text-center">{%= __(report.report_name) %}</h2>
@@ -23,6 +26,7 @@
 {% if (filters.cost_center) { %}
 	<h5 class="text-center">Cost Center: {%= filters.cost_center %}</h5>
 {% } %}
+	<h5 class="text-center">Currency: BTN</h5>
 <hr>
 <table class="table table-bordered">
 	<thead>
@@ -44,11 +48,15 @@
 				<td>
 					<span style="padding-left: {%= cint(data[j].indent) * 2 %}em">{%= row.account_name %}</span>
 				</td>
-				{% for(var i=2, l=report.columns.length; i<l; i++) { %}
+				<td>
+					<span>{%= row.account_code %}</span>
+				</td>
+				{% for(var i=3, l=report.columns.length; i<l; i++) { %}
 					<td class="text-right">
 						{% var fieldname = report.columns[i].field; %}
 						{% if (!is_null(row[fieldname])) { %}
-							{%= format_currency(row[fieldname], row.currency) %}
+							<!--{%= format_currency(row[fieldname], row.currency) %}-->
+							{%= format_number(row[fieldname], 2) %}
 						{% } %}
 					</td>
 				{% } %}
@@ -56,4 +64,4 @@
 		{% } %}
 	</tbody>
 </table>
-<p class="text-right text-muted">Printed On {%= dateutil.str_to_user(dateutil.get_datetime_as_string()) %}</p>
+<p class="text-right text-muted">Printed On {%= dateutil.str_to_user(dateutil.get_datetime_as_string()) %} by {%= frappe.session.user %}</p>

@@ -12,9 +12,9 @@ frappe.ui.form.on('Delivery Note', 'onload', function(frm) {
 			return (doc.docstatus==1 || doc.qty<=doc.actual_qty) ? "green" : "orange"
 		})
 
-	erpnext.queries.setup_queries(frm, "Warehouse", function() {
+	/*erpnext.queries.setup_queries(frm, "Warehouse", function() {
 		return erpnext.queries.warehouse(frm.doc);
-	});
+	}); */
 })
 
 erpnext.stock.DeliveryNoteController = erpnext.selling.SellingController.extend({
@@ -122,7 +122,26 @@ erpnext.stock.DeliveryNoteController = erpnext.selling.SellingController.extend(
 
 	reopen_delivery_note : function() {
 		cur_frm.cscript.update_status("Submitted")
-	}
+	},
+	"discount_or_cost_amount": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+                cur_frm.refresh_field("discount_amount")
+        },
+
+        "transportation_charges": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+                cur_frm.refresh_field("discount_amount")
+        },
+
+	"additional_cost": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+        },
+
+	"loading_cost": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+	},
 
 });
 
@@ -162,11 +181,11 @@ cur_frm.fields_dict['project'].get_query = function(doc, cdt, cdn) {
 	}
 }
 
-cur_frm.fields_dict['transporter_name'].get_query = function(doc) {
+/*cur_frm.fields_dict['transporter_name'].get_query = function(doc) {
 	return{
 		filters: { 'supplier_type': "transporter" }
 	}
-}
+}*/
 
 cur_frm.cscript['Make Packing Slip'] = function() {
 	frappe.model.open_mapped_doc({
@@ -199,6 +218,9 @@ erpnext.stock.delivery_note.set_print_hide = function(doc, cdt, cdn){
 			dn_fields['taxes'].print_hide = 0;
 	}
 }
+
+cur_frm.add_fetch("vehicle", "drivers_name", "drivers_name"),
+cur_frm.add_fetch("vehicle", "contact_no", "contact_no"),
 
 cur_frm.cscript.print_without_amount = function(doc, cdt, cdn) {
 	erpnext.stock.delivery_note.set_print_hide(doc, cdt, cdn);
@@ -246,19 +268,38 @@ if (sys_defaults.auto_accounting_for_stock) {
 		refresh_field("items");
 	}
 
-	cur_frm.fields_dict.items.grid.get_field("cost_center").get_query = function(doc) {
-		return {
-
-			filters: {
-				'company': doc.company,
-				"is_group": 0
-			}
-		}
-	}
 }
 
+//cost Center
+cur_frm.fields_dict['items'].grid.get_field('cost_center').get_query = function(frm, cdt, cdn) {
+        var d = locals[cdt][cdn];
+        return {
+                query: "erpnext.controllers.queries.filter_branch_cost_center",
+                filters: {'branch': frm.branch}
+        }
+}
+
+cur_frm.fields_dict['items'].grid.get_field('warehouse').get_query = function(doc, cdt, cdn) {
+        item = locals[cdt][cdn]
+        return {
+                query: "erpnext.controllers.queries.filter_branch_wh",
+                filters: {'branch': doc.branch}
+        }       
+}
+
+cur_frm.fields_dict['items'].grid.get_field('location').get_query = function(frm, cdt, cdn) {
+        var d = locals[cdt][cdn];
+	if (frm.branch) {
+		return {
+			filters: {'branch': frm.branch, "is_disabled": 0}
+		}
+	}
+	else {
+		frappe.throw("Branch is Mandatory")
+	}
+}
 //custom Scripts
-frappe.ui.form.on("Delivery Note", "onload", function(frm) {
+/*frappe.ui.form.on("Delivery Note", "onload", function(frm) {
 	cur_frm.set_query("transporter_name1", function() {
 		return {
 			"filters": {
@@ -266,4 +307,4 @@ frappe.ui.form.on("Delivery Note", "onload", function(frm) {
 			}
 		};
 	});
-});
+});*/

@@ -3,17 +3,113 @@
 
 {% include 'erpnext/selling/sales_common.js' %}
 
+cur_frm.add_fetch("rate_template", "rate", "transportation_rate")
+
 frappe.ui.form.on("Sales Order", {
 	onload: function(frm) {
-		erpnext.queries.setup_queries(frm, "Warehouse", function() {
+		/*erpnext.queries.setup_queries(frm, "Warehouse", function() {
 			return erpnext.queries.warehouse(frm.doc);
 		});
+		
+		if(!frm.doc.selling_price_list) {
+			//set default price list
+			frm.set_value("selling_price_list", "Standard Selling")
+		}*/
 
 		// formatter for material request item
 		frm.set_indicator_formatter('item_code',
 			function(doc) { return (doc.qty<=doc.delivered_qty) ? "green" : "orange" })
-	}
+	},
+	"naming_series": function(frm) {
+		//cur_frm.toggle_reqd("selling_price_template", frm.doc.naming_series == 'Sales Product' );
+
+		/*
+		// Following code added by SHIV on 08/12/2017
+		cur_frm.fields_dict['items'].grid.get_field('item_code').get_query = function(frm, cdt, cdn) {
+			var d = locals[cdt][cdn];
+			return {
+				filters: [
+				['Item', 'item_group', '=', frm.naming_series]
+				]
+			}
+		}*/
+	},
+
+	"discount_or_cost_amount": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+	},
+
+	"transportation_charges": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+	},
+
+	"additional_cost": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+        },
+
+	"loading_rate": function(frm) {
+		var total_qty = 0;
+		for (var i in cur_frm.doc.items) {
+			var item = cur_frm.doc.items[i];
+		        total_qty += item.qty;		
+			}
+		console.log("Loading Cost:" + total_qty);
+		cur_frm.set_value("loading_cost", flt(total_qty) * flt(frm.doc.loading_rate));
+
+	},
+
+	"loading_cost": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+	},
+
+	"transportation_rate": function(frm) {
+		cur_frm.set_value("transportation_charges", flt(frm.doc.transportation_rate) * flt(frm.doc.total_distance) * flt(frm.doc.total_quantity))
+		cur_frm.trigger("transportation_charges")
+		cur_frm.refresh_field("transportation_charges")
+	},
+
+	"total_distance": function(frm) {
+		cur_frm.set_value("transportation_charges", flt(frm.doc.transportation_rate) * flt(frm.doc.total_distance) * flt(frm.doc.total_quantity))
+		cur_frm.trigger("transportation_charges")
+		cur_frm.refresh_field("transportation_charges")
+	},
+
+	"total_quantity": function(frm) {
+		cur_frm.set_value("transportation_charges", flt(frm.doc.transportation_rate) * flt(frm.doc.total_distance) * flt(frm.doc.total_quantity))
+		cur_frm.trigger("transportation_charges")
+		cur_frm.refresh_field("transportation_charges")
+	},
 });
+
+/*
+// Following function added by SHIV on 08/12/2017
+frappe.ui.form.on("Sales Order Item", {
+	"item_code": function(frm, cdt, cdn){
+		var child = locals[cdt][cdn];
+		cur_frm.call({
+				method: "erpnext.stock.doctype.stock_price_template.stock_price_template.get_item_rate",
+				args: {
+					 tran_type: 'Sales',
+					 item_code: child.item_code,
+					 tran_date: frm.doc.transaction_date
+				},
+				callback: function(r) {
+				   if(r.message)  { 
+						frappe.model.set_value(cdt, cdn, 'item_code', r.message[0]['item_code']);
+						frappe.model.set_value(cdt, cdn, 'item_name', r.message[0]['item_name']);
+						frappe.model.set_value(cdt, cdn, 'qty', 0);
+						frappe.model.set_value(cdt, cdn, 'rate', r.message[0]['rate']);
+						//refresh_field("items"); 
+					}
+				}
+		});
+	},
+});
+*/
 
 erpnext.selling.SalesOrderController = erpnext.selling.SellingController.extend({
 	refresh: function(doc, dt, dn) {
@@ -51,9 +147,10 @@ erpnext.selling.SalesOrderController = erpnext.selling.SellingController.extend(
 						}
 				}
 
-				// delivery note
+				// delivery note and payment
 				if(flt(doc.per_delivered, 2) < 100 && ["Sales", "Shopping Cart"].indexOf(doc.order_type)!==-1 && allow_delivery) {
 					cur_frm.add_custom_button(__('Delivery'), this.make_delivery_note, __("Make"));
+					cur_frm.add_custom_button(__('Payment'), cur_frm.cscript.make_payment_entry, __("Make"));
 					cur_frm.page.set_inner_btn_group_as_primary(__("Make"));
 				}
 
@@ -109,6 +206,19 @@ erpnext.selling.SalesOrderController = erpnext.selling.SellingController.extend(
 						}
 					})
 				}, __("Get items from"));
+			
+			cur_frm.add_custom_button(__('Product Requisition'),
+                                function() {
+                                        erpnext.utils.map_current_doc({
+                                                method: "erpnext.selling.doctype.product_requisition.product_requisition.make_sales_order",
+                                                source_doctype: "Product Requisition",
+                                                get_query_filters: {
+                                                        docstatus: 1,
+                                                        company: cur_frm.doc.company
+                                                }
+                                        })
+                                }, __("Get items from"));
+
 		}
 
 		this.order_type(doc);
@@ -243,3 +353,124 @@ cur_frm.cscript.on_submit = function(doc, cdt, cdn) {
 		cur_frm.email_doc(frappe.boot.notification_settings.sales_order_message);
 	}
 };
+
+frappe.ui.form.on("Sales Order", "refresh", function(frm) {
+    cur_frm.set_query("customer", function() {
+        return {
+            "filters": {
+                "disabled": 0
+            }
+        };
+    });
+    cur_frm.set_query("rate_template", function() {
+        return {
+            "filters": {
+                "branch": frm.doc.branch
+            }
+        };
+    });
+    cur_frm.set_query("location", function() {
+        return{
+                "filters":{
+                        "branch": frm.doc.branch
+                }
+        };
+    });
+
+})
+
+/*
+//Set select option for "Initial Stock Templates"
+cur_frm.fields_dict['selling_price_template'].get_query = function(doc, dt, dn) {
+  return {
+     query: "erpnext.stock.doctype.stock_price_template.stock_price_template.get_template_list",
+     filters: { naming_series: doc.naming_series, posting_date: doc.transaction_date, purpose: 'Sales' }
+  };
+}
+//Auto add items based on the values created in the "Initial Stock Template" Setting
+cur_frm.cscript.selling_price_template = function(doc) {
+    cur_frm.call({
+        method: "erpnext.stock.doctype.stock_price_template.stock_price_template.get_initial_values",
+        args: {
+             name: doc.selling_price_template
+        },
+        callback: function(r) {
+           if(r.message)  { 
+                cur_frm.clear_table("items");
+                var new_row = frappe.model.add_child(cur_frm.doc, "Sales Order Item", "items");
+                new_row.item_code = r.message[0]['item_code'];
+                new_row.item_name = r.message[0]['item_name'];
+                new_row.uom = r.message[0]['uom'];
+                new_row.stock_uom = r.message[0]['stock_uom'];
+                new_row.qty = 0;
+                new_row.rate = r.message[0]['rate_amount'];
+                refresh_field("items"); 
+            }
+        }
+   });
+	if(doc.selling_price_template) {
+	       //Set item table read only
+	       cur_frm.set_df_property("items", "read_only",1);
+	       frappe.meta.get_docfield("Sales Order Item", "rate", cur_frm.doc.name).read_only = 1;
+	       frappe.meta.get_docfield("Sales Order Item", "item_code", cur_frm.doc.name).read_only = 1;
+	       refresh_field("items");
+	}
+	else {
+	       cur_frm.set_df_property("items", "read_only", 0);
+	       frappe.meta.get_docfield("Sales Order Item", "rate", cur_frm.doc.name).read_only = 1;
+	       frappe.meta.get_docfield("Sales Order Item", "item_code", cur_frm.doc.name).read_only = 1;
+	       refresh_field("items");
+	}
+}
+*/
+
+//auto list the price_templates based on branch, transaction_date, item_code
+cur_frm.fields_dict['items'].grid.get_field('price_template').get_query = function(frm, cdt, cdn) {
+        var d = locals[cdt][cdn];
+        return {
+                query: "erpnext.controllers.queries.price_template_list",
+	        filters: {'item_code': d.item_code, 'transaction_date': frm.transaction_date, 'branch': frm.branch, 'location': frm.location}
+	}
+}
+
+
+cur_frm.fields_dict['items'].grid.get_field('warehouse').get_query = function(frm, cdt, cdn) {
+	item = locals[cdt][cdn]
+	return {
+		"query": "erpnext.controllers.queries.filter_branch_wh",
+		filters: {'branch': frm.branch}
+	}
+}
+
+// on_selection of price_template, auto load the seling rate for items
+frappe.ui.form.on("Sales Order Item", {
+        "price_template": function(frm, cdt, cdn) {
+                d = locals[cdt][cdn]
+		 if(cur_frm.doc.location){
+                         loc = cur_frm.doc.location;
+                 }else{
+                         loc = "NA";
+                 }
+		console.log("Loc :" + loc);
+                frappe.call({
+                        method: "erpnext.production.doctype.selling_price.selling_price.get_selling_rate",
+                        args: {
+                                "price_list": d.price_template,
+                                "branch": cur_frm.doc.branch,
+                                "item_code": d.item_code,
+                                "transaction_date": cur_frm.doc.transaction_date,
+				"location": loc
+                        },
+                        callback: function(r) {
+                                frappe.model.set_value(cdt, cdn, "price_list_rate", r.message)
+                                frappe.model.set_value(cdt, cdn, "rate", r.message)
+                                cur_frm.refresh_field("price_list_rate")
+                                cur_frm.refresh_field("rate")
+                        }
+                })
+        },
+
+	"item_code": function(frm, cdt, cdn) {
+		frappe.model.set_value(cdt, cdn, "price_template", "") 
+}
+})

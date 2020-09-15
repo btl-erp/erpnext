@@ -167,7 +167,7 @@ def add_cc(args=None):
 		cc.parent_cost_center = args.get("parent")
 
 	cc.old_parent = ""
-	cc.insert()
+	cc.save()
 	return cc.name
 
 def reconcile_against_document(args):
@@ -175,8 +175,8 @@ def reconcile_against_document(args):
 		Cancel JV, Update aginst document, split if required and resubmit jv
 	"""
 	for d in args:
-		
-		check_if_advance_entry_modified(d)			
+		if d.against_voucher_type != "Hire Charge Invoice":	
+			check_if_advance_entry_modified(d)			
 		validate_allocated_amount(d)
 		
 		# cancel advance entry
@@ -256,7 +256,7 @@ def update_reference_in_journal_entry(d, jv_obj):
 	if d['allocated_amount'] < d['unadjusted_amount']:
 		jvd = frappe.db.sql("""
 			select cost_center, balance, against_account, is_advance,
-				account_type, exchange_rate, account_currency
+				account_type, exchange_rate, account_currency, business_activity
 			from `tabJournal Entry Account` where name = %s
 		""", d['voucher_detail_no'], as_dict=True)
 
@@ -286,6 +286,7 @@ def update_reference_in_journal_entry(d, jv_obj):
 		ch.reference_name = original_reference_name
 		ch.is_advance = cstr(jvd[0]["is_advance"])
 		ch.docstatus = 1
+		ch.business_activity = jvd[0]['business_activity']
 
 	# will work as update after submit
 	jv_obj.flags.ignore_validate_update_after_submit = True
@@ -362,10 +363,19 @@ def remove_ref_doc_link_from_pe(ref_type, ref_no):
 		where reference_doctype=%s and reference_name=%s and docstatus < 2""", (ref_type, ref_no))
 
 	if linked_pe:
-		frappe.db.sql("""update `tabPayment Entry Reference`
-			set allocated_amount=0, modified=%s, modified_by=%s
-			where reference_doctype=%s and reference_name=%s
-			and docstatus < 2""", (now(), frappe.session.user, ref_type, ref_no))
+             	if ref_type == 'Sales Invoice':
+                        sales_order = frappe.db.sql("""select sales_order from `tabSales Invoice Item` where parent = %s""", (ref_no), as_dict=True)
+                        if sales_order:
+                                frappe.db.sql("""update `tabPayment Entry Reference`
+                                        set reference_doctype='Sales Order', reference_name = %s,
+                                        modified=%s, modified_by=%s
+                                        where reference_doctype=%s and reference_name=%s
+                                        and docstatus < 2""", (str(sales_order[0].sales_order), now(), frappe.session.user, ref_type, ref_no))
+           	else:
+			frappe.db.sql("""update `tabPayment Entry Reference`
+				set allocated_amount=0, modified=%s, modified_by=%s
+				where reference_doctype=%s and reference_name=%s
+				and docstatus < 2""", (now(), frappe.session.user, ref_type, ref_no))
 			
 		for pe in linked_pe:
 			pe_doc = frappe.get_doc("Payment Entry", pe)
@@ -493,7 +503,8 @@ def get_outstanding_invoices(party_type, party, account, condition=None):
 			{condition}
 			and ((voucher_type = 'Journal Entry'
 					and (against_voucher = '' or against_voucher is null))
-				or (voucher_type not in ('Journal Entry', 'Payment Entry')))
+				or (voucher_type not in ('Journal Entry', 'Payment Entry' )))
+			and voucher_type not in ('Hire Charge Invoice', 'Job Card', 'Mechanical Payment', 'Project Invoice','Project Payment','HSD Payment','POL')
 		group by voucher_type, voucher_no
 		having (invoice_amount - payment_amount) > 0.005
 		order by posting_date, name""".format(
@@ -507,6 +518,7 @@ def get_outstanding_invoices(party_type, party, account, condition=None):
 		}, as_dict=True)
 
 	for d in invoice_list:
+		
 		outstanding_invoices.append(frappe._dict({
 			'voucher_no': d.voucher_no,
 			'voucher_type': d.voucher_type,
@@ -579,3 +591,187 @@ def get_children():
 				each["balance_in_account_currency"] = flt(get_balance_on(each.get("value")))
 
 	return acc
+
+def make_asset_transfer_gl(self, asset, date, from_cc, to_cc, not_legacy_data=True):
+	if not frappe.db.get_single_value("Accounts Settings", "auto_accounting_for_inter_company"):
+		return
+
+	if from_cc == to_cc:
+		frappe.throw("From Cost Center and To Cost Center cannot be the same")
+	if getdate(date) > getdate(nowdate()):
+		frappe.throw("The transaction date cannot be future date")
+
+	dep_schedules = frappe.db.sql("select d.name from tabAsset a, `tabDepreciation Schedule` d where d.parent = a.name and a.name = %s and a.docstatus = 1 and d.schedule_date >= %s and d.journal_entry is not null", (asset, date), as_dict=True)
+	if dep_schedules:
+		frappe.throw("The asset has been depreciated beyond the transfer date. Please change the transfer date and try again")	
+
+	asset = frappe.get_doc("Asset", asset)
+	
+	accumulated_dep = flt(asset.gross_purchase_amount) - flt(asset.value_after_depreciation)
+	
+	accumulated_dep_account = frappe.db.sql("select accumulated_depreciation_account from `tabAsset Category Account` where parent = %s", asset.asset_category, as_dict=True)[0].accumulated_depreciation_account
+
+	from erpnext.accounts.general_ledger import make_gl_entries
+	from erpnext.custom_utils import prepare_gl
+
+	gl_entries = []
+	gl_entries.append(
+		prepare_gl(self, {
+		       "account":  asset.asset_account,
+		       "credit": asset.gross_purchase_amount,
+		       "credit_in_account_currency": asset.gross_purchase_amount,
+		       "against_voucher": asset.name,
+		       "against_voucher_type": "Asset",
+		       "cost_center": from_cc,
+		       "business_activity": asset.business_activity
+		})
+	)
+
+	gl_entries.append(
+		prepare_gl(self, {
+		       "account":  asset.asset_account,
+		       "debit": asset.gross_purchase_amount,
+		       "debit_in_account_currency": asset.gross_purchase_amount,
+		       "against_voucher": asset.name,
+		       "against_voucher_type": "Asset",
+		       "cost_center": to_cc,
+		       "business_activity": asset.business_activity
+		})
+	)
+
+	if flt(accumulated_dep_account) > 0:
+		gl_entries.append(
+			prepare_gl(self, {
+			       "account": accumulated_dep_account,
+			       "debit": accumulated_dep,
+			       "debit_in_account_currency": accumulated_dep,
+			       "against_voucher": asset.name,
+			       "against_voucher_type": "Asset",
+			       "cost_center": from_cc,
+			       "business_activity": asset.business_activity
+			})
+		)
+		gl_entries.append(
+			prepare_gl(self, {
+			       "account": accumulated_dep_account,
+			       "credit": accumulated_dep,
+			       "credit_in_account_currency": accumulated_dep,
+			       "against_voucher": asset.name,
+			       "against_voucher_type": "Asset",
+			       "cost_center": to_cc,
+			       "business_activity": asset.business_activity
+			})
+		)
+	allow_inter_company_transaction = frappe.db.get_single_value("Accounts Settings", "auto_accounting_for_inter_company")
+	if allow_inter_company_transaction:
+		ic_account = frappe.db.get_single_value("Accounts Settings", "intra_company_account")
+		if not ic_account:
+			frappe.throw("Setup Intra Company Accounts under Accounts Settings")
+		if flt(asset.value_after_depreciation) > 0:
+			gl_entries.append(
+				prepare_gl(self, {
+				       "account": ic_account,
+				       "debit": asset.value_after_depreciation,
+				       "debit_in_account_currency": asset.value_after_depreciation,
+				       "against_voucher": asset.name,
+				       "against_voucher_type": "Asset",
+				       "cost_center": from_cc,
+				       "business_activity": asset.business_activity
+				})
+			)
+
+			gl_entries.append(
+				prepare_gl(self, {
+				       "account": ic_account,
+				       "credit": asset.value_after_depreciation,
+				       "credit_in_account_currency": asset.value_after_depreciation,
+				       "against_voucher": asset.name,
+				       "against_voucher_type": "Asset",
+				       "cost_center": to_cc,
+				       "business_activity": asset.business_activity
+				})
+			)
+
+	make_gl_entries(gl_entries, cancel=0, update_outstanding="No", merge_entries=False)
+
+
+##
+#Return all the child cost centers of the current cost center
+##
+def get_child_cost_centers(current_cs=None):
+	allchilds = [str('DUMMY') ]
+	allcs = []
+	cs_name = cs_par_name = "";
+
+	if current_cs:
+	  #Get all cost centers
+	  allcs = frappe.db.sql("SELECT name, parent_cost_center FROM `tabCost Center`", as_dict=True);
+	  #get the current cost center name
+	  query ="SELECT name, parent_cost_center FROM `tabCost Center` where name = \"" + current_cs + "\";";
+	  current = frappe.db.sql(query, as_dict=True);
+
+	  if(current):
+	    for a in current:
+    		cs_name = a['name'];
+    		cs_par_name = a['parent_cost_center'];
+
+	    #loop through the cost centers to search for the child cost centers
+	    allchilds.append(str(cs_name));
+	    for b in allcs:
+    		for c in allcs:
+    		      if(c['parent_cost_center'] in allchilds):
+        			 if(c['name'] not in allchilds):
+        			    allchilds.append(str(c['name']));
+
+	return allchilds;
+
+##
+#Return all the child accounts of the current accounts
+##
+def get_child_accounts(current_acc=None):
+	allchilds = []
+	allacc = []
+	acc_name = acc_parent_name = "";
+
+	if current_acc:
+	  #Get all cost centers
+	  allacc = frappe.db.sql("SELECT name, parent_account FROM `tabAccount`", as_dict=True);
+	  #get the current cost center name
+	  query ="SELECT name, parent_account FROM `tabAccount` where name = \"" + current_acc + "\";";
+	  current = frappe.db.sql(query, as_dict=True);
+
+	  if(current):
+	    for a in current:
+    		acc_name = a['name'];
+    		acc_parent_name = a['parent_account'];
+
+	    #loop through the cost centers to search for the child cost centers
+	    allchilds.append(acc_name);
+
+	    for b in allacc:
+    		for c in allacc:
+    		      if(c['parent_account'] in allchilds):
+        			 if(c['name'] not in allchilds):
+        			    allchilds.append(c['name']);
+
+	return allchilds;
+
+###
+# Return From/To Date from Report Period
+###
+def get_period_date(fiscal_year, period, cumulative=None):
+	if not period or not fiscal_year:
+		frappe.throw("Either Fiscal Year or Report Period is missing") 
+
+	values = ["from_date", "to_date"]
+	if cumulative:
+		values = ["c_from_date", "c_to_date"]
+	from_date, to_date = frappe.db.get_value("Report Period", period, values)
+	if from_date and to_date:
+		from_date = str(fiscal_year) + str(from_date)
+		to_date = str(fiscal_year) + str(to_date)
+		return from_date, to_date
+	else:
+		frappe.throw("Report Period Not Defined Properly")
+
+

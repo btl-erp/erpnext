@@ -25,6 +25,19 @@ frappe.query_reports["Loan Report"] = {
 			"options": "Employee"
 		},
 		{
+                        "fieldname":"bank",
+                        "label": __("Bank"),
+                        "fieldtype": "Link",
+                        "options": "Financial Institution"
+                },
+		{
+                        "fieldname":"status",
+                        "label": __("Status"),
+                        "fieldtype": "Select",
+                        "options": "\nDraft\nSubmitted",
+			"reqd":1
+                },
+		{
 			"fieldname":"company",
 			"label": __("Company"),
 			"fieldtype": "Link",

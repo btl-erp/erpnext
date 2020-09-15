@@ -41,8 +41,31 @@ frappe.ui.form.on("Purchase Receipt", {
                                         ]
 			}
 		})
-	}
+	},
+
+	freight_and_insurance_charges: function(frm) {
+		calculate_discount(frm)
+	},
+
+	discount: function(frm) {
+		calculate_discount(frm)
+	},
+
+	other_charges: function(frm) {
+		calculate_discount(frm)
+	},
+
+	tax: function(frm) {
+		calculate_discount(frm)
+	},
 });
+
+function calculate_discount(frm) {
+	cur_frm.set_value("total_add_ded", frm.doc.freight_and_insurance_charges + frm.doc.other_charges + frm.doc.tax - frm.doc.discount)
+	cur_frm.set_value("discount_amount", -frm.doc.freight_and_insurance_charges - frm.doc.other_charges - frm.doc.tax + frm.doc.discount)
+	cur_frm.refresh_field("discount_amount")
+	cur_frm.refresh_field("total_add_ded")
+}
 
 erpnext.stock.PurchaseReceiptController = erpnext.buying.BuyingController.extend({
 	refresh: function() {
@@ -55,7 +78,7 @@ erpnext.stock.PurchaseReceiptController = erpnext.buying.BuyingController.extend
 		}
 
 		if(!this.frm.doc.is_return && this.frm.doc.status!="Closed") {
-			if(this.frm.doc.docstatus==0) {
+			/*if(this.frm.doc.docstatus==0) {
 				cur_frm.add_custom_button(__('Purchase Order'),
 					function() {
 						erpnext.utils.map_current_doc({
@@ -70,14 +93,16 @@ erpnext.stock.PurchaseReceiptController = erpnext.buying.BuyingController.extend
 							}
 						})
 				}, __("Get items from"));
-			}
+			} */
 
 			if(this.frm.doc.docstatus == 1 && this.frm.doc.status!="Closed") {
-				if (this.frm.has_perm("submit")) {
+				/*if (this.frm.has_perm("submit")) {
 					cur_frm.add_custom_button(__("Close"), this.close_purchase_receipt, __("Status"))
-				}
+				}*/
 
-				cur_frm.add_custom_button(__('Return'), this.make_purchase_return, __("Make"));
+				if (this.frm.doc.status != "Completed") {
+					cur_frm.add_custom_button(__('Return'), this.make_purchase_return, __("Make"));
+				}
 
 				if(flt(this.frm.doc.per_billed) < 100) {
 					cur_frm.add_custom_button(__('Invoice'), this.make_purchase_invoice, __("Make"));
@@ -87,9 +112,9 @@ erpnext.stock.PurchaseReceiptController = erpnext.buying.BuyingController.extend
 		}
 
 
-		if(this.frm.doc.docstatus==1 && this.frm.doc.status === "Closed" && this.frm.has_perm("submit")) {
+		/*if(this.frm.doc.docstatus==1 && this.frm.doc.status === "Closed" && this.frm.has_perm("submit")) {
 			cur_frm.add_custom_button(__('Reopen'), this.reopen_purchase_receipt, __("Status"))
-		}
+		} */
 
 		this.frm.toggle_reqd("supplier_warehouse", this.frm.doc.is_subcontracted==="Yes");
 	},
@@ -231,7 +256,7 @@ frappe.ui.form.on("Purchase Receipt","items_on_form_rendered", function(frm, gri
                 "item_code": grid_row.grid_form.fields_dict.item_code.value
             },
             callback: function(r)  {
-                if(r.message && r.message == 'Services (works)') {
+                if(r.message && r.message == 'Services Works') {
                       grid_row.grid_form.fields_dict.rate.df.read_only = false
                       grid_row.grid_form.fields_dict.rate.refresh()
                 }
@@ -243,23 +268,12 @@ frappe.ui.form.on("Purchase Receipt","items_on_form_rendered", function(frm, gri
         })
 })
 
-//custom Scripts
-frappe.ui.form.on("Purchase Receipt","items_on_form_rendered", function(frm, grid_row, cdt, cdn) {
-	var grid_row = cur_frm.open_grid_row();
-        frappe.call({
-            method: "erpnext.stock.doctype.purchase_receipt.purchase_receipt.get_item_group",
-            args: {
-                "item_code": grid_row.grid_form.fields_dict.item_code.value
-            },
-            callback: function(r)  {
-                if(r.message && r.message == 'Services (works)') {
-                      grid_row.grid_form.fields_dict.rate.df.read_only = false
-                      grid_row.grid_form.fields_dict.rate.refresh()
-                }
-                else {
-                      grid_row.grid_form.fields_dict.rate.df.read_only = true
-                      grid_row.grid_form.fields_dict.rate.refresh()
-                }
-            }
-        })
-})
+//cost Center
+cur_frm.fields_dict['items'].grid.get_field('cost_center').get_query = function(frm, cdt, cdn) {
+        var d = locals[cdt][cdn];
+        return {
+                query: "erpnext.controllers.queries.filter_branch_cost_center",
+                filters: {'branch': frm.branch}
+        }
+}
+

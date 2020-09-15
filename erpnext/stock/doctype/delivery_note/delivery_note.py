@@ -13,6 +13,7 @@ from erpnext.controllers.selling_controller import SellingController
 from frappe.desk.notifications import clear_doctype_notifications
 from frappe.model.naming import make_autoname
 from erpnext.custom_autoname import get_auto_name
+from erpnext.custom_utils import check_uncancelled_linked_doc, check_future_date
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
@@ -62,9 +63,6 @@ class DeliveryNote(SellingController):
 			'extra_cond': """ and exists (select name from `tabDelivery Note` where name=`tabDelivery Note Item`.parent and is_return=1)"""
 		}]
 
-	def autoname(self):
-		self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
-
 	def before_print(self):
 		def toggle_print_hide(meta, fieldname):
 			df = meta.get_field(fieldname)
@@ -98,22 +96,40 @@ class DeliveryNote(SellingController):
 					 frappe.throw(_("Sales Order required for Item {0}").format(d.item_code))
 
 	def validate(self):
+		check_future_date(self.posting_date)
+		self.calculate_transportation()
 		super(DeliveryNote, self).validate()
 		self.set_status()
 		self.so_required()
 		self.validate_proj_cust()
 		self.check_close_sales_order("against_sales_order")
 		self.validate_for_items()
+		self.check_transportation_detail()
 		self.validate_warehouse()
 		self.validate_uom_is_integer("stock_uom", "qty")
 		self.validate_with_previous_doc()
-
+		self.per_delivered = 100
 		from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 		make_packing_list(self)
 
 		self.update_current_stock()
 
 		if not self.installation_status: self.installation_status = 'Not Installed'
+
+        def calculate_transportation(self):
+                total_qty = 0
+                for a in self.items:
+                        total_qty += flt(a.qty)
+
+                self.total_quantity = total_qty
+                self.transportation_charges = round(flt(self.total_quantity) * flt(self.total_distance) * flt(self.transportation_rate), 2)
+                self.discount_amount = flt(self.discount_or_cost_amount) - flt(self.transportation_charges) - flt(self.loading_cost) - flt(self.additional_cost)
+	
+
+	def check_transportation_detail(self):
+		if self.naming_series == 'Mineral Products':
+			if self.vehicle == None or self.drivers_name == None  or self.contact_no == None:
+				frappe.throw("Transporter Detail Is Mandiatory For Mineral Products")
 
 	def validate_with_previous_doc(self):
 		for fn in (("Sales Order", "against_sales_order", "so_detail"),
@@ -146,6 +162,7 @@ class DeliveryNote(SellingController):
 			return
 
 		for d in self.get('items'):
+			self.validate_warehouse_branch(d.warehouse, self.branch)
 			e = [d.item_code, d.description, d.warehouse, d.against_sales_order or d.against_sales_invoice, d.batch_no or '']
 			f = [d.item_code, d.description, d.against_sales_order or d.against_sales_invoice]
 
@@ -192,6 +209,8 @@ class DeliveryNote(SellingController):
 		self.update_prevdoc_status()
 		self.update_billing_status()
 
+		if self.is_return:
+			self.dupdate_return_status()
 		if not self.is_return:
 			self.check_credit_limit()
 
@@ -201,6 +220,7 @@ class DeliveryNote(SellingController):
 		self.make_gl_entries()
 
 	def on_cancel(self):
+		check_uncancelled_linked_doc(self.doctype, self.name)
 		self.check_close_sales_order("against_sales_order")
 		self.check_next_docstatus()
 
@@ -214,6 +234,28 @@ class DeliveryNote(SellingController):
 		self.cancel_packing_slips()
 
 		self.make_gl_entries_on_cancel()
+		if self.is_return:
+			self.dupdate_return_status()
+
+	def dupdate_return_status(self):
+		actual_qty = frappe.db.sql("""
+				select dni.item_code, sum(ifnull(dni.qty,0)) as qty from `tabDelivery Note` dn, `tabDelivery Note Item` dni
+				where dn.name = dni.parent and dn.docstatus =1 and dn.name = '{0}' group by dni.item_code
+			""".format(self.return_against), as_dict = 1)
+		returned_qty = frappe.db.sql("""
+				select dni.item_code, sum(ifnull(dni.qty,0)) as qty from `tabDelivery Note` dn, `tabDelivery Note Item` dni
+				where dn.name = dni.parent and dn.docstatus =1 and dn.return_against = '{0}' group by dni.item_code
+			""".format(self.return_against), as_dict =1)
+	
+			
+		ref_qty = actual_qty and actual_qty[0].qty or 0.0
+		ret_qty = returned_qty and -flt(returned_qty[0].qty) or 0.0
+		per_delivered = ((ref_qty - ret_qty)/ref_qty)*100
+		frappe.db.sql(""" update `tabDelivery Note` set per_delivered = {0} where name = '{1}'""".format(per_delivered, self.name))
+		frappe.db.sql("""update `tabDelivery Note` set per_delivered  = {0} where name = '{1}'""".format(per_delivered, self.return_against))
+		target = frappe.get_doc("Delivery Note", self.return_against)
+		target.set_status(update=True)
+		return per_delivered
 
 	def check_credit_limit(self):
 		from erpnext.selling.doctype.customer.customer import check_credit_limit
@@ -376,10 +418,14 @@ def make_sales_invoice(source_name, target_doc=None):
 					target_doc.qty = source_doc.qty - invoiced_qty_map.get(source_doc.name, 0) + a.qty
 		else:
 			target_doc.qty = source_doc.qty - invoiced_qty_map.get(source_doc.name, 0)
+		target_doc.name_tolerance = "Default"
 
 	doc = get_mapped_doc("Delivery Note", source_name, 	{
 		"Delivery Note": {
 			"doctype": "Sales Invoice",
+			"field_map": {
+				"naming_series": "naming_series",
+			},
 			"validation": {
 				"docstatus": ["=", 1]
 			}
@@ -391,7 +437,8 @@ def make_sales_invoice(source_name, target_doc=None):
 				"parent": "delivery_note",
 				"so_detail": "so_detail",
 				"against_sales_order": "sales_order",
-				"serial_no": "serial_no"
+				"serial_no": "serial_no",
+				"cost_center": "cost_center"
 			},
 			"postprocess": update_item,
 			"filter": lambda d: abs(d.qty) - abs(invoiced_qty_map.get(d.name, 0))<=0
