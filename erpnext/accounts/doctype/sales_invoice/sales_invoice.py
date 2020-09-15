@@ -95,6 +95,7 @@ class SalesInvoice(SellingController):
 		set_account_for_mode_of_payment(self)
 
 	def on_submit(self):
+		self.check_advance_amount()
 		if not self.recurring_id:
 			frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype,
 			 	self.company, self.base_grand_total, self)
@@ -127,11 +128,16 @@ class SalesInvoice(SellingController):
 
 		self.update_time_sheet(self.name)
 
+	def check_advance_amount(self):
+		if self.advances and not flt(self.outstanding_amount) == 0:
+			for a in self.advances:
+				if a.advance_amount > a.allocated_amount:
+					frappe.throw("Outstanding Amount should be zero for Sales Invoice with Advance")
+
 	def before_cancel(self):
 		self.update_time_sheet(None)
 
 	def on_cancel(self):
-		check_uncancelled_linked_doc(self.doctype, self.name)
 		self.check_close_sales_order("sales_order")
 
 		from erpnext.accounts.utils import unlink_ref_doc_from_payment_entries
@@ -325,6 +331,11 @@ class SalesInvoice(SellingController):
 			and amount = 0""", self.name)
 
 	def validate_with_previous_doc(self):
+                # Following condition added by SHIV on 2019/05/27
+                # Skip all checks for opening invoices created via "Opening Invoice Creation Tool"
+                if self.is_opening == "Yes":
+                        return
+                
 		super(SalesInvoice, self).validate_with_previous_doc({
 			"Sales Order": {
 				"ref_dn_field": "sales_order",
@@ -494,7 +505,8 @@ class SalesInvoice(SellingController):
 
 	def make_gl_entries(self, repost_future_gle=True):
 		gl_entries = self.get_gl_entries()
-
+#		if self.name == "SI19030062":
+#			frappe.throw("{0}".format(gl_entries))
 		if gl_entries:
 			from erpnext.accounts.general_ledger import make_gl_entries
 
@@ -542,7 +554,8 @@ class SalesInvoice(SellingController):
 		self.make_gle_for_change_amount(gl_entries)
 
 		self.make_write_off_gl_entry(gl_entries)
-
+		if self.name =="SI19030062":
+			frappe.throw("{0}".format(gl_entries))
 		return gl_entries
 
 	def make_customer_gl_entry(self, gl_entries):
@@ -881,6 +894,8 @@ class SalesInvoice(SellingController):
 					"debit": allocated_amount,
 					"debit_in_account_currency": allocated_amount,
 					"business_activity": a.advance_business_activity,
+					"against_voucher": self.return_against if cint(self.is_return) else self.name,
+					"against_voucher_type": self.doctype,
 					"cost_center": a.advance_cost_center
 				}, advance_account_currency)
 			)

@@ -17,6 +17,10 @@ def get_data():
 					"type": "doctype",
 					"name": "Production",
 				},
+                                {
+					"type": "doctype",
+					"name": "Lot List", 
+				},
 			]
 		},
 		{
@@ -30,6 +34,10 @@ def get_data():
 				{
 					"type": "doctype",
 					"name": "Adhoc Production",
+				},
+				{
+					"type": "doctype",
+					"name": "Range",
 				},
 				{
 					"type": "doctype",
@@ -106,7 +114,13 @@ def get_data():
                                         "name": "Sales Report",
                                         "label": "Sales Report",
                                         "doctype": "Sales Order"
-                                }
+                },
+				{
+					"type": "report",
+					"is_query_report": True,
+					"name": "Lot List Report",
+					"doctype": "Lot List List"
+				},
 
 
 			]

@@ -22,7 +22,6 @@ def get_invoices(branch=None, start_date=None, end_date=None, tds_rate=2):
 		query = "select name, application_date as posting_date, concat(employee_name, \" (\",  name, \")\") bill_no FROM `tabLeave Encashment` AS a WHERE a.docstatus = 1 AND a.application_date BETWEEN \'" + str(start_date) + "\' AND \'" + str(end_date) + "\' AND a.branch = \'"+ str(branch)+"\' AND NOT EXISTS (SELECT 1 FROM `tabRRCO Receipt Entries` AS b WHERE b.purchase_invoice = a.name);"
 	else:
 		query = "select name, posting_date, bill_no FROM `tabPurchase Invoice` AS a WHERE docstatus = 1 AND posting_date BETWEEN \'" + str(start_date) + "\' AND \'" + str(end_date) + "\' AND tds_rate = " + str(tds_rate) + " AND a.branch = \'"+ str(branch)+"\' AND NOT EXISTS (SELECT 1 FROM `tabRRCO Receipt Entries` AS b WHERE b.purchase_invoice = a.name) UNION select name, posting_date, name as bill_no FROM `tabDirect Payment` AS a WHERE docstatus = 1 AND posting_date BETWEEN \'" + str(start_date) + "\' AND \'" + str(end_date) + "\' AND tds_percent = " + str(tds_rate) + " AND a.branch = \'"+ str(branch)+"\' AND NOT EXISTS (SELECT 1 FROM `tabRRCO Receipt Entries` AS b WHERE b.purchase_invoice = a.name);"
-	
 	invoice_list = frappe.db.sql(query, as_dict=True);
 	return {
 		"marked": invoices_marked,
@@ -44,8 +43,8 @@ def mark_invoice(branch=None, invoice_list=None, receipt_number=None, receipt_da
 		rrco.submit()
 
 @frappe.whitelist()
-def updateSalaryTDS(purpose=None, branch=None, month=None, fiscal_year=None, receipt_number=None, receipt_date=None, cheque_number=None,cheque_date=None):
-	chk_value = frappe.db.get_value("RRCO Receipt Entries", {"fiscal_year": str(fiscal_year), "month": str(month)})
+def updateSalaryTDS(purpose=None, branch=None, month=None, fiscal_year=None, receipt_number=None, receipt_date=None, cheque_number=None,cheque_date=None, cost_center = None):
+	chk_value = frappe.db.get_value("RRCO Receipt Entries", {"fiscal_year": str(fiscal_year), "month": str(month), "cost_center":str(cost_center)})
 	if chk_value:
 		frappe.throw("RRCO Receipt and date has been already assigned for the given month and fiscal year")
 	else:
@@ -58,6 +57,7 @@ def updateSalaryTDS(purpose=None, branch=None, month=None, fiscal_year=None, rec
 		rrco.cheque_number = str(cheque_number)
 		rrco.cheque_date = str(cheque_date)
 		rrco.branch = str(branch)
+		rrco.cost_center = str(cost_center)
 		rrco.submit()
 
 		return "DONE"

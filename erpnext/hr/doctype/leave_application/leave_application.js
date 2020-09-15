@@ -19,15 +19,39 @@ frappe.ui.form.on("Leave Application", {
 			};
 		});
 
-		frm.set_query("employee", erpnext.queries.employee);
+		//frm.set_query("employee", erpnext.queries.employee);
+		frm.set_query("employee", function() {
+			return {
+				"filters": {"status": "Active"}
+			}
+		});
 
 		if(frm.doc.__islocal) {
 			frm.trigger("get_employee_branch_costcenter");
-        }		
+
+		}	
+	
 	},
 
-	/*refresh: function(frm) {
-		if (frm.is_new()) {
+	refresh: function(frm) {
+		
+		if(!frm.doc.__islocal && frm.doc.workflow_state != "Draft" && frm.doc.workflow_state != "Rejected")
+		{
+			frm.set_df_property("leave_type", "read_only", 1);
+			frm.set_df_property("from_date", "read_only", 1);
+			frm.set_df_property("to_date", "read_only", 1);
+			frm.set_df_property("employee", "read_only", 1);
+		}
+
+		if(frm.doc.workflow_state == "Draft" || frm.doc.workflow_state == "Rejected"){
+                        frm.set_df_property("leave_approver", "hidden", 1);
+			frm.set_df_property("leave_approver_name", "hidden", 1);
+                }
+
+		console.log("testing");
+
+	
+		/* if (frm.is_new()) {
 			frm.set_value("status", "Open");
 			frm.trigger("calculate_total_days");
 		}
@@ -42,8 +66,8 @@ frappe.ui.form.on("Leave Application", {
 		}
 		else{
 			frm.toggle_display("status", false);
-		}
-	},*/
+		} */
+	},
 
 	leave_approver: function(frm) {
 		if(frm.doc.leave_approver){

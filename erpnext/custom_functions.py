@@ -16,17 +16,17 @@ def check_pending_approvers():
 		send_email(a, sorted_list[a], "Material Request")
 
 	#Travel Authorization	
-	mrs = frappe.db.sql("select name, supervisor as approver, creation as date from `tabTravel Authorization` where docstatus = 0 and document_status != 'Rejected'", as_dict=True)
+	mrs = frappe.db.sql("select name, supervisor as approver, creation as date from `tabTravel Authorization` where docstatus = 0 and document_status != 'Rejected' and workflow_state not like '%Rejected%'", as_dict=True)
 	sorted_list = segregrate(mrs)
 	for a in sorted_list:
 		send_email(a, sorted_list[a], "Travel Authorization")
 
-	mrs = frappe.db.sql("select name, supervisor as approver, creation as date from `tabTravel Claim` where docstatus = 0 and supervisor_approval = 0 and claim_status not like '%Rejected%'", as_dict=True)
+	mrs = frappe.db.sql("select name, supervisor as approver, creation as date from `tabTravel Claim` where docstatus = 0 and supervisor_approval = 0 and claim_status not like '%Rejected%' and workflow_state not like '%Rejected%'", as_dict=True)
 	sorted_list = segregrate(mrs)
 	for a in sorted_list:
 		send_email(a, sorted_list[a], "Travel Claim")
 
-	mrs = frappe.db.sql("select name, leave_approver as approver, creation as date from `tabLeave Application` where docstatus = 0", as_dict=True)
+	mrs = frappe.db.sql("select name, leave_approver as approver, creation as date from `tabLeave Application` where docstatus = 0 and workflow_state not like '%Rejected%'", as_dict=True)
 	sorted_list = segregrate(mrs)
 	for a in sorted_list:
 		send_email(a, sorted_list[a], "Leave Application")
@@ -45,10 +45,10 @@ def segregrate(master_set):
 def send_email(email, doc_list, doctype):
 	message = "The following " + str(doctype) + " has been waiting your approval: <br />"
 	num = 1
-	subject = str(doctype) + " Pending your Approval"
+	subject = str(doctype) + " Status Notification"
 
 	for a in doc_list:
-		message += str(num) + "  <a href='https://erp.cdcl.bt/desk#Form/"+str(doctype)+"/"+str(a)+"'>" + str(a) + "</a> <br />" 
+		message += str(num) + "  <a href='https://nes.nrdcl.bt/desk#Form/"+str(doctype)+"/"+str(a)+"'>" + str(a) + "</a> <br />" 
 		num = num + 1
 	message += "<br /><br />"
 	try:

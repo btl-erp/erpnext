@@ -18,11 +18,25 @@ def execute(filters=None):
 
 
 def get_columns(filters):
-	columns = [_("Reference") + ":Data:100", _("Reference No") + ":Dynamic Link/"+_("Reference")+":100", 
-	_("Sales Inv. No.") + ":Data:100", _("Sales Inv. Date") + ":Date:100", _("Sales Amount") + ":Currency:90", _("Received") + ":Currency:90", _("Receivable") + ":Currency:90", 
-	_("Payment Inv. No") + ":Data:100", _("Inv. Date") + ":Date:100", _("Payment Amount") + ":Currency:90", _("Paid") + ":Currency:90", _("Payable") + ":Currency:90",
-	_("Advance Received") + ":Currency:90", _("Rec. Adjusted") + ":Currency:90", _("Rec. Balance") + ":Currency:90",
-	_("Advance Paid") + ":Currency:90", _("Pay. Adjusted") + ":Currency:90", _("Pay. Balance") + ":Currency:90"]
+	columns = [
+	_("Reference") + ":Data:100",
+	 _("Reference No") + ":Dynamic Link/"+_("Reference")+":100", 
+	_("Sales Inv. No.") + ":Data:100", 
+	_("Sales Inv. Date") + ":Date:100", 
+	_("Sales Amount") + ":Currency:90", 
+	_("Received") + ":Currency:90", 
+	_("Receivable") + ":Currency:90", 
+	_("Payment Inv. No") + ":Data:100", 
+	_("Inv. Date") + ":Date:100", 
+	_("Payment Amount") + ":Currency:90", 
+	_("Paid") + ":Currency:90", 
+	_("Payable") + ":Currency:90",
+	_("Advance Received") + ":Currency:90", 
+	_("Rec. Adjusted") + ":Currency:90", 
+	_("Rec. Balance") + ":Currency:90",
+	_("Advance Paid") + ":Currency:90", 
+	_("Pay. Adjusted") + ":Currency:90", 
+	_("Pay. Balance") + ":Currency:90"]
 	return columns
 
 def get_data(filters):
@@ -55,7 +69,7 @@ def get_data(filters):
 
 		sql2 = "SELECT name, bill_no, posting_date, grand_total, outstanding_amount FROM `tabPurchase Invoice` \
 		WHERE supplier = \'" + str(filters.party) + "\' and \
-		posting_date BETWEEN \'" + str(filters.start_date) + "\' and \'" + str(filters.end_date) + "\'"
+		posting_date BETWEEN \'" + str(filters.start_date) + "\' and \'" + str(filters.end_date) + "\' and docstatus = '1'"
 		
 		if filters.get("branch"):
 			sql2 += " and branch = \'" + str(filters.branch) + "\'"

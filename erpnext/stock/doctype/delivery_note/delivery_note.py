@@ -14,6 +14,7 @@ from frappe.desk.notifications import clear_doctype_notifications
 from frappe.model.naming import make_autoname
 from erpnext.custom_autoname import get_auto_name
 from erpnext.custom_utils import check_uncancelled_linked_doc, check_future_date
+import datetime
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
@@ -97,17 +98,21 @@ class DeliveryNote(SellingController):
 
 	def validate(self):
 		check_future_date(self.posting_date)
+		self.calculate_transportation()
 		super(DeliveryNote, self).validate()
 		self.set_status()
 		self.so_required()
 		self.validate_proj_cust()
 		self.check_close_sales_order("against_sales_order")
 		self.validate_for_items()
-		self.check_transportation_detail()
 		self.validate_warehouse()
 		self.validate_uom_is_integer("stock_uom", "qty")
 		self.validate_with_previous_doc()
-
+		self.per_delivered = 100
+		#TTPL Code
+		self.check_transportation_detail()
+		self.update_shipping_address()
+		
 		from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 		make_packing_list(self)
 
@@ -115,12 +120,49 @@ class DeliveryNote(SellingController):
 
 		if not self.installation_status: self.installation_status = 'Not Installed'
 
-	
+	#TTPL Code
+	def update_shipping_address(self):
+		if self.customer_order:
+			self.shipping_address_name = frappe.db.get_value("Customer Order", self.customer_order, "site_location")
+		if self.customer:
+			self.contact_mobile = frappe.db.get_value("Customer", self.customer, "mobile_no")
+
+        def calculate_transportation(self):
+                total_qty = 0
+                for a in self.items:
+                        total_qty += flt(a.qty)
+
+                self.total_quantity = total_qty
+                self.transportation_charges = round(flt(self.total_quantity) * flt(self.total_distance) * flt(self.transportation_rate), 2)
+                self.discount_amount = flt(self.discount_or_cost_amount) - flt(self.transportation_charges) - flt(self.loading_cost) - flt(self.additional_cost)
 
 	def check_transportation_detail(self):
 		if self.naming_series == 'Mineral Products':
-			if self.vehicle == None or self.drivers_name == None  or self.contact_no == None:
+			if not self.vehicle:
 				frappe.throw("Transporter Detail Is Mandiatory For Mineral Products")
+			#TTPL Code
+			else:
+				total_qty = 0.00
+				for i in self.items:
+					total_qty += i.qty
+
+				if total_qty > 0:
+					vehicle_capacity = frappe.db.get_value("Vehicle", self.vehicle, "vehicle_capacity")
+					if total_qty > vehicle_capacity:
+						frappe.throw("Vehicle Capacity is {0}, which is less than total quantity {1}".format(vehicle_capacity, self.total_quantity))
+
+				transport_mode = frappe.db.get_value("Customer Order", self.customer_order, "transport_mode")
+				if self.select_vehicle_queue or transport_mode == "Common Pool":
+					local_distance_limit = frappe.db.get_value("CRM Branch Setting", self.branch, "local_distance")
+					if self.total_distance > flt(local_distance_limit):
+						for a in frappe.db.sql("select name, vehicle, token from `tabLoad Request` where load_status = 'Queued' and crm_branch = '{0}' and vehicle_capacity = {1} order by requesting_date_time, token limit 1".format(self.branch, total_qty), as_dict=True):
+							if a.vehicle == self.vehicle:
+								self.load_request = a.name
+							else:
+								frappe.throw("Selected vehicle is already loaded or not from Queue List.")
+
+						if not self.load_request:
+							frappe.throw("Vehicle {0} is not registered for queue".format(self.vehicle))
 
 	def validate_with_previous_doc(self):
 		for fn in (("Sales Order", "against_sales_order", "so_detail"),
@@ -196,9 +238,14 @@ class DeliveryNote(SellingController):
 		# Check for Approving Authority
 		frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype, self.company, self.base_grand_total, self)
 
+		#Creation of DC and Update Load Request
+		self.create_delivery_confirmation()
+
 		# update delivered qty in sales order
 		self.update_prevdoc_status()
 		self.update_billing_status()
+		if self.is_return:
+			self.dupdate_return_status()
 
 		if not self.is_return:
 			self.check_credit_limit()
@@ -223,6 +270,28 @@ class DeliveryNote(SellingController):
 		self.cancel_packing_slips()
 
 		self.make_gl_entries_on_cancel()
+		if self.is_return:
+			self.dupdate_return_status()
+
+	def dupdate_return_status(self):
+		actual_qty = frappe.db.sql("""
+				select dni.item_code, sum(ifnull(dni.qty,0)) as qty from `tabDelivery Note` dn, `tabDelivery Note Item` dni
+				where dn.name = dni.parent and dn.docstatus =1 and dn.name = '{0}' group by dni.item_code
+			""".format(self.return_against), as_dict = 1)
+		returned_qty = frappe.db.sql("""
+				select dni.item_code, sum(ifnull(dni.qty,0)) as qty from `tabDelivery Note` dn, `tabDelivery Note Item` dni
+				where dn.name = dni.parent and dn.docstatus =1 and dn.return_against = '{0}' group by dni.item_code
+			""".format(self.return_against), as_dict =1)
+	
+			
+		ref_qty = actual_qty and actual_qty[0].qty or 0.0
+		ret_qty = returned_qty and -flt(returned_qty[0].qty) or 0.0
+		per_delivered = ((ref_qty - ret_qty)/ref_qty)*100
+		frappe.db.sql(""" update `tabDelivery Note` set per_delivered = {0} where name = '{1}'""".format(per_delivered, self.name))
+		frappe.db.sql("""update `tabDelivery Note` set per_delivered  = {0} where name = '{1}'""".format(per_delivered, self.return_against))
+		target = frappe.get_doc("Delivery Note", self.return_against)
+		target.set_status(update=True)
+		return per_delivered
 
 	def check_credit_limit(self):
 		from erpnext.selling.doctype.customer.customer import check_credit_limit
@@ -295,6 +364,46 @@ class DeliveryNote(SellingController):
 			dn_doc.update_billing_percentage(update_modified=update_modified)
 
 		self.load_from_db()
+
+	#TTPL Code
+	def create_delivery_confirmation(self):
+		now = datetime.datetime.now()
+		if self.customer_order:
+			total_qty = 0.00
+			for i in self.items:
+				total_qty += i.qty
+
+			doc = frappe.get_doc("Customer Order", self.customer_order)
+
+			# Update Load Request Queue if transport mode is Common Pool
+			# TTPL New Update
+			local_distance_limit = frappe.db.get_value("CRM Branch Setting", self.branch, "local_distance")
+			if doc.transport_mode == "Common Pool" and self.total_distance > local_distance_limit:
+				if self.load_request:
+					queue_status = frappe.db.get_value("Load Request", self.load_request, "load_status")
+					if queue_status == "Queued":
+						frappe.db.sql("update `tabLoad Request` set load_status = 'Loaded', customer='{0}', customer_name = '{1}', location = '{2}', contact_mobile = '{3}', delivery_note = '{4}' where name = '{5}'".format(self.customer, self.customer_name, self.shipping_address_name, self.contact_mobile, self.name, self.load_request))
+					else:
+						frappe.throw("Cannot select Vehicle status in Load Request(Queue) with {0}".format(queue_status))
+				else:
+					frappe.throw("Vehicle is not selected from Load Request Queue or Load Request is missing")
+
+			# Create Delivery Confirmation document
+			dc_doc = frappe.new_doc("Delivery Confirmation")
+			dc_doc.branch = self.branch
+			dc_doc.confirmation_status = "In Transit"
+			dc_doc.exit_date_time = now
+			dc_doc.delivery_note = self.name
+			dc_doc.user = doc.user
+			dc_doc.customer = doc.customer
+			dc_doc.vehicle = self.vehicle
+			dc_doc.drivers_name = self.drivers_name
+			dc_doc.contact_no = self.contact_no
+			dc_doc.customer_order = self.customer_order
+			dc_doc.transport_mode = doc.transport_mode
+			dc_doc.qty = total_qty
+			dc_doc.save(ignore_permissions=True)
+			dc_doc.submit()
 
 def update_billed_amount_based_on_so(so_detail, update_modified=True):
 	# Billed against Sales Order directly
@@ -392,6 +501,8 @@ def make_sales_invoice(source_name, target_doc=None):
 			"doctype": "Sales Invoice",
 			"field_map": {
 				"naming_series": "naming_series",
+		#		"loading_rate" : "rate_per_unit",
+                 #               "loading_cost" : "total_loading_amount"
 			},
 			"validation": {
 				"docstatus": ["=", 1]

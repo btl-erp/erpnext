@@ -174,11 +174,11 @@ frappe.query_reports["Sales Report"] = {
                         "fieldtype": "Link",
                         "options": "Warehouse",
                         "get_query": function() {
-                                var branch = frappe.query_report.filters_by_name.branch.get_value();
+                         /*     var branch = frappe.query_report.filters_by_name.branch.get_value();
                                 if (!branch) {
                                         return
-                                }
-                                return {"doctype": "Warehouse", "filters": {"branch": branch, "disabled": 0}}
+                                } */
+                                return {"doctype": "Warehouse", "filters": {"disabled": 0}}
                         }
                 },
 
@@ -199,10 +199,24 @@ frappe.query_reports["Sales Report"] = {
 			"default": "Sales Order"
                 },
 		{
-                        "fieldname": "aggrigate",
+                        "fieldname": "aggregate",
                         "label": ("Show Aggregate"),
                         "fieldtype": "Check",
                         "default": 0
-                }
+		},
+		{
+                        "fieldname": "product_wise_customer",
+                        "label": ("Product Wise Customer"),
+                        "fieldtype": "Check",
+                        "default": 0
+                },
+		{
+                        "fieldname": "show_species_wise",
+                        "label": ("Show Species Wise"),
+                        "fieldtype": "Check",
+                        "default": 0,
+                },
+
+
 	]
 }

@@ -45,21 +45,24 @@ class PurchaseInvoice(BuyingController):
 			frappe.throw("Buying Cost Center is Mandatory")
 		if not self.is_opening:
 			self.is_opening = 'No'
-
+		
 		self.check_ba()
 		self.validate_tds()
 
-		###if self.outstanding_amount:
-		#	outstanding_old = self.outstanding_amount;
-
 		super(PurchaseInvoice, self).validate()
-		###self.outstanding_amount = outstanding_old;
 
 		if not self.is_return:
 			self.po_required()
 			self.pr_required()
 			self.validate_supplier_invoice()
+			
+		if self.charges:
+			total_charges = 0
+			for c in self.charges:
+				total_charges += c.charges
 
+			self.outstanding_amount = self.outstanding_amount - total_charges
+				
 
 		# validate cash purchase
 		if (self.is_paid == 1):
@@ -78,6 +81,8 @@ class PurchaseInvoice(BuyingController):
 		self.validate_fixed_asset()
 		self.validate_fixed_asset_account()
 		self.create_remarks()
+	
+			
 
 	def validate_tds(self):
 		if not self.type:
@@ -139,6 +144,11 @@ class PurchaseInvoice(BuyingController):
 				pc_obj.check_for_closed_status('Purchase Order', d.purchase_order)
 
 	def validate_with_previous_doc(self):
+                # Following condition added by SHIV on 2019/05/27
+                # Skip all checks for opening invoices created via "Opening Invoice Creation Tool"
+                if self.is_opening == "Yes":
+                        return
+                        
 		super(PurchaseInvoice, self).validate_with_previous_doc({
 			"Purchase Order": {
 				"ref_dn_field": "purchase_order",
@@ -281,10 +291,10 @@ class PurchaseInvoice(BuyingController):
 						.format(item.purchase_receipt))
 
 	def on_submit(self):
+		self.check_po_closed()
 		self.check_ba()
 		self.check_prev_docstatus()
 		self.update_status_updater_args()
-
 		frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype,
 			self.company, self.base_grand_total)
 
@@ -308,6 +318,12 @@ class PurchaseInvoice(BuyingController):
 		self.update_fixed_asset()
 		self.consume_budget()
 		self.update_rrco_receipt()
+	
+	def check_po_closed(self):
+                for a in self.items:
+                        if a.purchase_order:
+                                if frappe.db.get_value("Purchase Order", a.purchase_order, "status") == "Closed":
+                                        frappe.throw("Cannot modify closed purchase order")
 
 	def update_fixed_asset(self):
 		for d in self.get("items"):
@@ -339,6 +355,7 @@ class PurchaseInvoice(BuyingController):
 		self.make_tax_gl_entries(gl_entries)
 		self.make_tds_gl_entry(gl_entries)
 		self.make_advance_gl_entry(gl_entries)
+		self.make_charges_gl_entry(gl_entries)
 
 		gl_entries = merge_similar_entries(gl_entries)
 
@@ -387,6 +404,41 @@ class PurchaseInvoice(BuyingController):
 					"against_voucher_type": self.doctype,
 				}, self.party_account_currency)
 			)
+
+	def make_charges_gl_entry(self, gl_entries):
+		if self.charges:
+			for c in self.charges:
+				if c.account:
+					gl_entries.append(
+						self.get_gl_dict({
+							"account": c.account,
+							"against": self.supplier,
+							#"party_type": "Supplier",
+							#"party": self.supplier,
+							"credit": flt(c.charges),
+							"credit_in_account_currency": flt(c.charges),
+							"business_activity": self.business_activity,
+							"cost_center": self.buying_cost_center
+						})
+					)
+					gl_entries.append(
+						self.get_gl_dict({
+							"account": self.credit_to,
+							"party_type": "Supplier",
+							"party": self.supplier,
+							"against": c.account,
+							"debit": flt(c.charges),
+							"debit_in_account_currency": flt(c.charges),
+							"against_voucher": self.return_against if cint(self.is_return) else self.name,
+							"against_voucher_type": self.doctype,
+							"cost_center": self.buying_cost_center,
+							"business_activity": self.business_activity,
+						})
+					)
+					
+				else:
+					frappe.throw("Please select an account under Deduction Charges")
+					
 
 	def make_item_gl_entries(self, gl_entries):
 		# item gl entries
@@ -788,6 +840,11 @@ class PurchaseInvoice(BuyingController):
 		self.due_date = None
 
 	def consume_budget(self):
+                # Following condition added by SHIV on 2019/05/27
+                # Skip all checks for opening invoices created via "Opening Invoice Creation Tool"
+                if self.is_opening == "Yes":
+                        return
+                
 		for item in self.get("items"):
 			expense, cost_center = frappe.db.get_value("Purchase Order Item", item.po_detail, ["budget_account", "cost_center"])
 			if expense != item.expense_account and cost_center != item.cost_center:

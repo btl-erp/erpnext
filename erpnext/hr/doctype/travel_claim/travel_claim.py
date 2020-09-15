@@ -10,34 +10,17 @@ from frappe.utils import cint, flt, nowdate, money_in_words, getdate, date_diff,
 from erpnext.accounts.utils import get_account_currency, get_fiscal_year
 import collections
 from erpnext.hr.doctype.travel_authorization.travel_authorization import get_exchange_rate
+from erpnext.custom_workflow import validate_workflow_states
 
 class TravelClaim(Document):
-	def get_status(self):
-                if self.workflow_state =="Verified By Supervisor":
-                        self.supervisor_approval = 1
-			self.seupervisor_approved_on = nowdate()
-                elif self.workflow_state == "Approved":
-                        self.hr_approval =1
-			self.hr_approved_on = nowdate()
-                elif self.workflow_state == "Rejected":
-                        self.hr_approval =0
-                        self.supervisor_approval =0
-                        self.seupervisor_approved_on = None
-			self.hr_approved_on = None
-                else:
-                        self.hr_approval =0
-                        self.supervisor_approval =0
-                        self.supervisor_approved_on = None
-			self.hr_approved_on = None
-
 	def validate(self):
-		self.get_status()
 		hr_role = frappe.db.get_value("UserRole", {"parent": frappe.session.user, "role": "HR User"}, "role")
-		if frappe.session.user == self.supervisor and not self.supervisor_approval:
-			self.db_set("supervisor_approved_on", '')
-			self.supervisor_approved_on = ''
-		if self.supervisor_approved_on and not hr_role:
-			frappe.throw("Cannot change records after approval by supervisor")
+		#if frappe.session.user == self.supervisor and not self.supervisor_approval:
+		#	self.db_set("supervisor_approved_on", '')
+		#	self.supervisor_approved_on = ''
+		#if self.supervisor_approved_on and not hr_role:
+		#	frappe.throw("Cannot change records after approval by supervisor")
+		validate_workflow_states(self)
 		#self.check_return_date()
 		self.validate_dates()
 		self.check_approval()
@@ -61,8 +44,8 @@ class TravelClaim(Document):
 		self.check_double_dates()
 
 	def on_submit(self):
-		self.get_status()
-		self.validate_submitter()
+		#self.get_status()
+		#self.validate_submitter()
 		#self.check_status()
 		self.post_journal_entry()
 		self.update_travel_authorization()
@@ -76,9 +59,15 @@ class TravelClaim(Document):
 		cl_status = frappe.db.get_value("Journal Entry", self.claim_journal, "docstatus")
 		if cl_status and cl_status != 2:
 			frappe.throw("You need to cancel the claim journal entry first!")
-		
-		ta = frappe.get_doc("Travel Authorization", self.ta)
-		ta.db_set("travel_claim", "")
+
+		tas = frappe.db.sql("select distinct(travel_authorization) as ta from `tabTravel Claim Item` where parent = %s", str(self.name), as_dict=True)
+		for a in tas:
+			ta = frappe.get_doc("Travel Authorization", a.ta)
+			ta.db_set("travel_claim", "")
+
+		if self.ta:
+			travel_a = frappe.get_doc("Travel Authorization", self.ta)
+			travel_a.db_set("travel_claim","")
 
 	def on_cancel(self):
 		self.sendmail(self.employee, "Travel Claim Cancelled by HR" + str(self.name), "Your travel claim " + str(self.name) + " has been cancelled by the user")
@@ -212,8 +201,11 @@ class TravelClaim(Document):
                 for i in self.get("items"):
                         exchange_rate      = 1 if i.currency == company_currency else get_exchange_rate(i.currency, company_currency)
                         #i.dsa             = flt(dsa_per_day)
-                        i.dsa              = flt(i.dsa) 
-                        i.dsa_percent      = lastday_dsa_percent if i.last_day else i.dsa_percent
+                        i.dsa              = flt(i.dsa)
+                        ##### Ver 3.0.190213 Begins, Following line replaced by SHIV on 13/02/2019
+                        #i.dsa_percent      = lastday_dsa_percent if i.last_day else i.dsa_percent
+                        i.dsa_percent      = (i.dsa_percent if i.dsa_percent <= lastday_dsa_percent else lastday_dsa_percent) if i.last_day else i.dsa_percent
+                        ##### Ver 3.0.190213 Ends
                         i.amount           = (flt(i.days_allocated)*(flt(i.dsa)*flt(i.dsa_percent)/100)) + (flt(i.mileage_rate) * flt(i.distance))
                         i.actual_amount    = flt(i.amount) * flt(exchange_rate)
                         total_claim_amount = flt(total_claim_amount) +  flt(i.actual_amount)
@@ -247,7 +239,7 @@ class TravelClaim(Document):
 			if not end_date:
 				end_date = self.items[len(self.items) - 1].date
 
-			tas = frappe.db.sql("select a.name from `tabTravel Claim` a, `tabTravel Claim Item` b where a.employee = %s and a.docstatus = 1 and a.name = b.parent and (b.date between %s and %s or %s between b.date and b.till_date or %s between b.date and b.till_date) and a.name != %s", (str(self.employee), str(start_date), str(end_date), str(start_date), str(end_date), str(self.name)), as_dict=True)
+			tas = frappe.db.sql("select a.name from `tabTravel Claim` a, `tabTravel Claim Item` b where a.employee = %s and a.docstatus = 1 and a.name = b.parent and (b.date between %s and %s or %s between b.date and b.till_date or %s between b.date and b.till_date) and a.name != %s and a.travel_type = %s and a.place_type = %s", (str(self.employee), str(start_date), str(end_date), str(start_date), str(end_date), str(self.name), str(self.travel_type), str(self.place_type)), as_dict=True)
 			if tas:
 				frappe.throw("The dates in your current Travel Claim has already been claimed in " + str(tas[0].name))
 
@@ -347,10 +339,11 @@ class TravelClaim(Document):
 	# Update the claim reference on travel authorization
 	##
 	def update_travel_authorization(self):
-		ta = frappe.get_doc("Travel Authorization", self.ta)
-		if ta.travel_claim and ta.travel_claim <> self.name:
-			frappe.throw("A travel claim <b>" + str(ta.travel_claim) + "</b> has already been created for the authorization")
-		ta.db_set("travel_claim", self.name)
+		for i in self.get("items"):	
+			ta = frappe.get_doc("Travel Authorization", i.travel_authorization)
+			if ta.travel_claim and ta.travel_claim <> self.name:
+				frappe.throw("A travel claim <b>" + str(ta.travel_claim) + "</b> has already been created for the authorization <b>" + str(i.travel_authorization) + "</b>")
+			ta.db_set("travel_claim", self.name)
 
 	##
 	# Allow only approved authorizations to be submitted
@@ -378,10 +371,10 @@ class TravelClaim(Document):
 	##
 	# Allow only the approver to submit the document
 	##
-	def validate_submitter(self):
-		hr_role = frappe.db.get_value("UserRole", {"parent": frappe.session.user, "role": "HR User"}, "role")
-		if not hr_role:
-			frappe.throw("Only a HR User can submit this document")
+	#def validate_submitter(self):
+	#	hr_role = frappe.db.get_value("UserRole", {"parent": frappe.session.user, "role": "HR User"}, "role")
+	#	if not hr_role:
+	#		frappe.throw("Only a HR User can submit this document")
 
 	##
 	# Send notification to the supervisor / employee
@@ -394,4 +387,30 @@ class TravelClaim(Document):
 			except:
 				pass
 
+
+@frappe.whitelist()
+def get_travel_detail(employee, start_date, end_date, place_type, travel_type):
+	if employee and start_date and end_date and place_type and travel_type:
+		data=[]
+		query1 = "select name, dsa_per_day, currency, advance_amount from `tabTravel Authorization`  \
+			where posting_date between \'"+ str(start_date) +"\' and \'"+ str(end_date) +"\' \
+			and employee = \'"+ str(employee) + "\' and place_type = \'"+ str(place_type) + "\' \
+			and travel_type = \'"+ str(travel_type) + "\' and docstatus = 1 and (travel_claim ='' or travel_claim is NULL)"
+
+		for b in frappe.db.sql(query1, as_dict=True):
+			for a in frappe.db.sql("select halt, from_place, to_place, date, no_days, till_date, \
+				halt_to_date, halt_at, no_days from `tabTravel Authorization Item` i \
+				where i.parent = %s order by `date`",b.name, as_dict=True):
+				if b.currency == "BTN":
+					exchange_rate = 1
+				else:
+					exchange_rate = frappe.db.get_value("Currency Exchange", {"from_currency": b.currency, "to_currency": "BTN"}, "exchange_rate")
+				data.append({"name":b.name, "halt":a.halt, "from_place":a.from_place, "to_place":a.to_place, "date":a.date, "no_days":a.no_days, "till_date":a.till_date, "halt_at":a.halt_at, "dsa_per_day":b.dsa_per_day, "currency":b.currency, "exchange_rate":exchange_rate, "dsa_percent":100, "last_day":0, "advance_amount":0})
+					
+			data[len(data)-1]['last_day'] = 1
+			dsa_percent = frappe.db.get_single_value("HR Settings", "return_day_dsa")
+			data[len(data)-1]['dsa_percent'] = dsa_percent
+			data[len(data)-1]['advance_amount'] = b.advance_amount
+			
+		return data
 

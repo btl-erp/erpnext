@@ -63,6 +63,10 @@ def get_data():
 					"type": "doctype",
 					"name": "Loss Tolerance",
 					"description": _("Loss Tolerance Setting"),
+				},
+				{
+					"type": "doctype",
+					"name": "Transportation Rate",
 				}
 			]
 		},
@@ -80,10 +84,17 @@ def get_data():
 				{
                                         "type": "report",
                                         "is_query_report": True,
-                                        "name": "Sales Report",
-                                        "label": "Sales Report",
+                                        "name": "Overall Sales Report",
+                                        "label": "Overall Sales Report",
                                         "doctype": "Sales Order"
                                 },
+				{
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "Timber Sales Report",
+                                        "label": "Timber Sales Report",
+                                        "doctype": "Sales Order"
+                		},
 				{
 					"type": "report",
 					"is_query_report": True,
@@ -133,6 +144,27 @@ def get_data():
 					"doctype": "Payment Entry",
 					"is_query_report": True,
 				},
+				
+				{
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "Timber Allotment To AWBI",
+                                        "label": "Timber Allotment Report",
+                                        "doctype": "Product Requisition"
+                                },
+				{
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "Customer Group Report",
+                                        "label": "Customer Group Wise Sales Report",
+                                        "doctype": "Sales Invoice"
+                                },
+				{
+                                        "type": "report",
+					"name": "General Sales Order Report",
+                                        "doctype": "Sales Order"
+                                },
+
 			]
 		},
 		{

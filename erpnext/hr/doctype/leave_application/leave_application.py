@@ -6,6 +6,7 @@ Version          Author          CreatedOn          ModifiedOn          Remarks
 ------------ --------------- ------------------ -------------------  -----------------------------------------------------
 1.0		  SSK		                   20/08/2016         Introducing Leave Encashment Logic
 2.0               SHIV                             09/02/2018         Taking care balance for back dated leave applications
+2.0.190225        SHIV                             25/02/2019         ticket#1422: `status` field updation on cancel
 --------------------------------------------------------------------------------------------------------------------------                                                                          
 '''
 from __future__ import unicode_literals
@@ -23,6 +24,9 @@ from erpnext.hr.doctype.employee_leave_approver.employee_leave_approver import g
 # Ver 1.0 Ends
 from erpnext.custom_utils import get_year_start_date, get_year_end_date
 from datetime import timedelta, date
+from erpnext.hr.doctype.approver_settings.approver_settings import get_final_approver
+from erpnext.hr.hr_custom_functions import get_officiating_employee
+from erpnext.custom_workflow import validate_workflow_states
 
 class LeaveDayBlockedError(frappe.ValidationError): pass
 class OverlapError(frappe.ValidationError): pass
@@ -30,19 +34,10 @@ class InvalidLeaveApproverError(frappe.ValidationError): pass
 class LeaveApproverIdentityError(frappe.ValidationError): pass
 
 from frappe.model.document import Document
-class LeaveApplication(Document):
-	
-	def get_status(self):
-		if self.workflow_state == "Rejected":
-			self.status = "Rejected"
-		if self.workflow_state == "Approved":
-			self.status= "Approved"	
 
-	"""def get_feed(self):
-		return _("{0}: From {0} of type {1}").format(self.status, self.employee_name, self.leave_type)
-        """
+class LeaveApplication(Document):
 	def validate(self):
-		self.get_status()
+		validate_workflow_states(self)
 		self.branch = frappe.db.get_value("Employee", self.employee, "branch")
 		self.cost_center = frappe.db.get_value("Employee", self.employee, "cost_center")
 		self.validate_dates_ta()
@@ -62,7 +57,7 @@ class LeaveApplication(Document):
 		self.show_block_day_warning()
 		self.validate_block_days()
 		self.validate_salary_processed_days()
-		self.validate_leave_approver()
+#		self.validate_leave_approver()
 		self.validate_backdated_applications()
                 
 	def on_update(self):
@@ -91,14 +86,19 @@ class LeaveApplication(Document):
 			immediate_sp = frappe.db.get_value("Employee", frappe.db.get_value("Employee", self.employee, "reports_to"), "user_id")
 			if str(immediate_sp) != str(self.leave_approver):
 				self.notify_supervisor()
+			self.update_cf_entry('Submit')
 		self.update_for_backdated_applications()
 
+        def before_cancel(self):
+                self.status = "Cancelled"
+                
 	def on_cancel(self):
 		# notify leave applier about cancellation
 		self.notify_employee("cancelled")
 		self.cancel_attendance()
 		self.update_for_backdated_applications()
 		self.cancel_leavesummary()
+		self.update_cf_entry('Cancel')
         # ++++++++++++++++++++ Ver 2.0 BEGINS ++++++++++++++++++++
         # Following methods created by SHIV on 2018/02/12
         def validate_backdated_applications(self):
@@ -255,10 +255,10 @@ class LeaveApplication(Document):
 
 				if self.status != "Rejected" and self.leave_balance < self.total_leave_days:
 					if frappe.db.get_value("Leave Type", self.leave_type, "allow_negative"):
-						frappe.msgprint(_("Note: There is not enough leave balance for Leave Type {0}")
+						frappe.msgprint(_("Note: Leave not allocated or Leave balance is not enough for Leave Type {0}. Please contact HR Manager")
 							.format(self.leave_type))
 					else:
-						frappe.throw(_("There is not enough leave balance for Leave Type {0}")
+						frappe.throw(_("Leave not allocated or Leave balance is not enough for Leave Type {0}. Please contact HR Manager")
 							.format(self.leave_type))
 
 	def validate_leave_overlap(self):
@@ -309,25 +309,26 @@ class LeaveApplication(Document):
 		if max_days and flt(self.total_leave_days) > flt(max_days):
 			frappe.throw(_("Leave of type {0} cannot be longer than {1} days").format(self.leave_type, max_days))
 
-	def validate_leave_approver(self):
-		employee = frappe.get_doc("Employee", self.employee)
-		all_app = get_approvers("User", "", "", "", "", {"employee": self.employee})
-		leave_approvers = []
-		for a in all_app:
-			leave_approvers.append(a[0])
-
-		if len(leave_approvers) and self.leave_approver not in leave_approvers:
-			frappe.throw(_("Leave approver must be one of {0}")
-				.format(comma_or(leave_approvers)), InvalidLeaveApproverError)
-
-		elif self.leave_approver and not frappe.db.sql("""select name from `tabUserRole`
-			where parent=%s and role='Approver'""", self.leave_approver):
-			frappe.throw(_("{0} ({1}) must have role 'Leave Approver'")\
-				.format(get_fullname(self.leave_approver), self.leave_approver), InvalidLeaveApproverError)
-
-		elif self.docstatus==1 and len(leave_approvers) and self.leave_approver != frappe.session.user:
-			frappe.throw(_("Only the selected Leave Approver can submit this Leave Application"),
-				LeaveApproverIdentityError)
+#	def validate_leave_approver(self):
+#		employee = frappe.get_doc("Employee", self.employee)
+#		all_app = get_approvers("User", "", "", "", "", {"employee": self.employee})
+#		leave_approvers = []
+#		for a in all_app:
+#			leave_approvers.append(a[0])
+#
+#		leave_approvers.append(get_final_approver(employee.branch))		
+#		if len(leave_approvers) and self.leave_approver not in leave_approvers:
+#			frappe.throw(_("Leave approver must be one of {0}")
+#				.format(comma_or(leave_approvers)), InvalidLeaveApproverError)
+#
+#		elif self.leave_approver and not frappe.db.sql("""select name from `tabUserRole`
+#			where parent=%s and role='Approver'""", self.leave_approver):
+#			frappe.throw(_("{0} ({1}) must have role 'Leave Approver'")\
+#				.format(get_fullname(self.leave_approver), self.leave_approver), InvalidLeaveApproverError)
+#
+#		elif self.docstatus==1 and len(leave_approvers) and self.leave_approver != frappe.session.user:
+#			frappe.throw(_("Only the selected Leave Approver can submit this Leave Application"),
+#				LeaveApproverIdentityError)
 
 	def notify_employee(self, status):
 		employee = frappe.get_doc("Employee", self.employee)
@@ -407,13 +408,33 @@ class LeaveApplication(Document):
                         	if str(self.from_date)[0:4] != str(self.to_date)[0:4]:
                                 	frappe.throw("Leave Application cannot overlap fiscal years")
 
+
+	#update Carry Forward Transaction
+        #only if leave_type = 'Casual Leave'
+        def update_cf_entry(self, action):
+                leave_days = 0.0
+                if action == 'Submit':
+                        leave_days = self.total_leave_days
+
+                if action == 'Cancel':
+                        leave_days = -1 * self.total_leave_days
+
+                cf = frappe.db.sql(""" select p.name from `tabCarry Forward Entry` p, `tabCarry Forward Item` c where c.parent = p.name 
+                                 and c.employee = '{0}' and (p.fiscal_year = '{1}' or p.fiscal_year = '{2}') and p.docstatus = 1
+                                 """.format(self.employee,  getdate(self.from_date).year, getdate(self.to_date).year), frappe._dict())
+                c = cf and cf[0] or 0.0
+                if cf:
+                        frappe.db.sql(""" update `tabCarry Forward Item` set leaves_taken = leaves_taken + {0}, 
+                                leave_balance = leaves_allocated - leaves_taken  where parent = '{1}' and employee = '{2}'
+                                """.format(leave_days, c[0], self.employee))
+
 def daterange(start_date, end_date):
     for n in range(int ((date(end_date) - date(start_date)).days)):
 	yield date(start_date) + timedelta(n)
 
 
 @frappe.whitelist()
-def get_approvers(doctype, txt, searchfield, start, page_len, filters):
+def get_approvers(doctype=None, txt=None, searchfield=None, start=None, page_len=None, filters=None):
 	app_list = []
 	if not filters.get("employee"):
 		frappe.throw(_("Please select Employee Record first."))
@@ -435,7 +456,8 @@ def get_approvers(doctype, txt, searchfield, start, page_len, filters):
 	"""
 	#Check for Officiating Employeee, if so, replace
 	for a, b in enumerate(app_list):
-		off = frappe.db.sql("select officiate from `tabOfficiating Employee` where docstatus = 1 and revoked != 1 and %(today)s between from_date and to_date and employee = %(employee)s", {"today": nowdate(), "employee": frappe.db.get_value("Employee", {"user_id": app_list[a]}, "name")}, as_dict=True)
+		off = get_officiating_employee(frappe.db.get_value("Employee", {"user_id": app_list[a]}, "name"))
+		#off = frappe.db.sql("select officiate from `tabOfficiating Employee` where docstatus = 1 and revoked != 1 and %(today)s between from_date and to_date and employee = %(employee)s order by creation desc limit 1", {"today": nowdate(), "employee": frappe.db.get_value("Employee", {"user_id": app_list[a]}, "name")}, as_dict=True)
 		if off:
 			app_list[a] = str(frappe.db.get_value("Employee", off[0].officiate, "user_id"))
 	
@@ -505,24 +527,45 @@ def get_leave_balance_on(employee, leave_type, ason_date, allocation_records=Non
 	return flt(allocation.total_leaves_allocated) - flt(leaves_taken)
 	#return flt(allocation.total_leaves_allocated) - flt(leaves_taken) - flt(leaves_encashed)
         '''
+	#leaves carry forwarded from CL to EL
 
-        allocation   = get_leave_allocation_records(ason_date, employee).get(employee, frappe._dict()).get(leave_type, frappe._dict())
+        carry_forward = frappe.db.sql(""" select c.employee, c.leave_balance,  p.fiscal_year from `tabCarry Forward Entry` p, 
+                        `tabCarry Forward Item` c where c.parent = p.name and p.docstatus = 1 and p.leave_type = 'Casual Leave' 
+                        and {0}-fiscal_year = 1 and c.employee = '{1}' and p.docstatus = 1 
+                        order by fiscal_year desc limit 1""".format(getdate(ason_date).year, employee), frappe._dict())
+        leaves = 0.0
+        if carry_forward:
+                if leave_type == 'Casual Leave':
+                        leaves = carry_forward and -1* carry_forward[0][1] or 0.0
+                elif leave_type == 'Earned Leave':
+                        leaves = carry_forward and carry_forward[0][1] or 0.0
+                else:
+                        leaves = 0.0
+
+        	
+	allocation   = get_leave_allocation_records(ason_date, employee).get(employee, frappe._dict()).get(leave_type, frappe._dict())
         balance      = 0
-        
+
         if allocation:
                 leaves_taken = get_approved_leaves_for_period(employee, leave_type, allocation.from_date, ason_date)
-                balance      = flt(allocation.total_leaves_allocated) - flt(leaves_taken)
-                
+                if leave_type == "Medical Leave":
+                        frappe.msgprint(str(leaves_taken))
+                balance      = flt(allocation.total_leaves_allocated) - flt(leaves_taken) + flt(leaves)
+                if balance <= 0:
+                        balance = flt(allocation.total_leaves_allocated) - flt(leaves_taken)
+
                 if leave_type == 'Earned Leave':
                         #le = get_le_settings()         # Line commented by SHIV on 2018/10/12
                         le = frappe.get_doc("Employee Group",frappe.db.get_value("Employee",employee,"employee_group")) # Line added by SHIV on 2018/10/12
-                        if flt(flt(allocation.total_leaves_allocated) - flt(leaves_taken)) > flt(le.encashment_lapse):
+                        if flt(flt(allocation.total_leaves_allocated) - flt(leaves_taken)) + flt(leaves) > flt(le.encashment_lapse):
                                 balance = flt(le.encashment_lapse)
         else:
                 balance = 0
-                
+
         return flt(balance)
-        ##
+
+
+	##
         #  Ver 2.0 Ends
         ##
 
@@ -810,8 +853,11 @@ def add_holidays(events, start, end, employee, company):
 				"name": holiday.name
 			})
 
+# Ver 2.0.19025, commented by SHIV on 25/02/2019 
+'''
 def check_cancelled_leaves():
 	ls = frappe.db.sql("select name from `tabLeave Application` where docstatus = 2 and status != 'Cancelled'", as_dict=True)
 	for l in ls:
 		doc = frappe.get_doc("Leave Application", l.name)
 		doc.db_set("status", "Cancelled")
+'''

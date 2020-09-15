@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate, formatdate, cstr
 from operator import itemgetter
+from erpnext.accounts.utils import get_child_cost_centers
 
 def execute(filters=None):
 	validate_filters(filters);
@@ -19,7 +20,7 @@ def get_data(query, filters=None):
 	data = []
 	datas = frappe.db.sql(query, as_dict=True);
 	for d in datas:
-		row = [d.month, "Salary", d.basic_pay, round(flt(d.gross_pay) - flt(d.basic_pay) - (flt(d.comm_all) / 2), 2), d.gross_pay, d.gross_pay, d.nppf,d.gis, flt(d.gross_pay) - flt(d.nppf) - flt(d.gis), d.tds, d.health, d.receipt_number, d.receipt_date]
+		row = [d.month, "Salary", d.basic_pay, round(flt(d.gross_pay) - flt(d.basic_pay) - (flt(d.comm_all) / 2), 2), round(flt(d.gross_pay)-(flt(d.comm_all) / 2),2), round(flt(d.gross_pay)-(flt(d.comm_all) / 2),2), d.nppf,d.gis, flt(d.gross_pay) - flt(d.nppf) - flt(d.gis) - (flt(d.comm_all) / 2), d.tds, d.health, d.receipt_number, d.receipt_date]
 		data.append(row);
 
 	#Leave Encashment 
@@ -66,16 +67,32 @@ def get_data(query, filters=None):
 	return data
 
 def construct_query(filters=None):
+	'''query = """select a.month, a.gross_pay,
+		(select b.amount from `tabSalary Detail` b where salary_component = 'Basic Pay' and b.parent = a.name) as basic_pay,
+		(select b.amount from `tabSalary Detail` b where salary_component = 'Salary Tax' and b.parent = a.name) as tds ,
+		(select b.amount from `tabSalary Detail` b where salary_component = 'PF' and b.parent = a.name) as nppf ,
+		(select b.amount from `tabSalary Detail` b where salary_component = 'Group Insurance Scheme' and b.parent = a.name) as gis ,
+		(select b.amount from `tabSalary Detail` b where salary_component = 'Communication Allowance' and b.parent = a.name) as comm_all ,
+		(select b.amount from `tabSalary Detail` b where salary_component = 'Health Contribution' and b.parent = a.name) as health,
+		r.receipt_number, r.receipt_date
+		 from `tabSalary Slip` a, `tabRRCO Receipt Entries` r
+		 where a.fiscal_year = r.fiscal_year and a.month = r.month and a.docstatus = 1 and r.purpose = 'Employee Salary' and a.fiscal_year = """ + str(filters.fiscal_year)
+
+	'''
+
 	query = """select a.month, a.gross_pay,
-	(select b.amount from `tabSalary Detail` b where salary_component = 'Basic Pay' and b.parent = a.name) as basic_pay,
-	(select b.amount from `tabSalary Detail` b where salary_component = 'Salary Tax' and b.parent = a.name) as tds ,
-	(select b.amount from `tabSalary Detail` b where salary_component = 'PF' and b.parent = a.name) as nppf ,
-	(select b.amount from `tabSalary Detail` b where salary_component = 'Group Insurance Scheme' and b.parent = a.name) as gis ,
-	(select b.amount from `tabSalary Detail` b where salary_component = 'Communication Allowance' and b.parent = a.name) as comm_all ,
-	(select b.amount from `tabSalary Detail` b where salary_component = 'Health Contribution' and b.parent = a.name) as health,
-	r.receipt_number, r.receipt_date
-	 from `tabSalary Slip` a, `tabRRCO Receipt Entries` r
-	 where a.fiscal_year = r.fiscal_year and a.month = r.month and a.docstatus = 1 and r.purpose = 'Employee Salary' and a.fiscal_year = """ + str(filters.fiscal_year)
+        (select b.amount from `tabSalary Detail` b where salary_component = 'Basic Pay' and b.parent = a.name) as basic_pay,
+        (select b.amount from `tabSalary Detail` b where salary_component = 'Salary Tax' and b.parent = a.name) as tds ,
+        (select b.amount from `tabSalary Detail` b where salary_component = 'PF' and b.parent = a.name) as nppf ,
+        (select b.amount from `tabSalary Detail` b where salary_component = 'Group Insurance Scheme' and b.parent = a.name) as gis ,
+        (select b.amount from `tabSalary Detail` b where salary_component = 'Communication Allowance' and b.parent = a.name) as comm_all ,
+        (select b.amount from `tabSalary Detail` b where salary_component = 'Health Contribution' and b.parent = a.name) as health,
+        r.receipt_number, r.receipt_date
+         from `tabSalary Slip` a, `tabRRCO Receipt Entries` r
+         where a.fiscal_year = r.fiscal_year and a.month = r.month and a.docstatus = 1
+	 and exists (select 1 from `tabCost Center` where a.cost_center in (select name from `tabCost Center` where parent_cost_center 
+	 in (select name from `tabCost Center` where parent_cost_center = r.cost_center))) 
+         and r.purpose = 'Employee Salary' and a.fiscal_year = """ + str(filters.fiscal_year)
 
 	if filters.employee:
 		query = query + " AND a.employee = \'" + str(filters.employee) + "\'";

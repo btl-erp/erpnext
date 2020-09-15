@@ -31,6 +31,7 @@ class SalesOrder(SellingController):
 	def validate(self):
 		check_future_date(self.transaction_date)
 		super(SalesOrder, self).validate()
+		self.calculate_transportation()
 
 		self.validate_order_type()
 		self.validate_delivery_date()
@@ -41,7 +42,11 @@ class SalesOrder(SellingController):
 		self.validate_for_items()
 		self.validate_warehouse()
 		self.validate_drop_ship()
-	
+		
+		if self.naming_series == "Timber Products":
+			self.validate_lot_list()
+
+
 		from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 		make_packing_list(self)
 
@@ -50,6 +55,43 @@ class SalesOrder(SellingController):
 
 		if not self.billing_status: self.billing_status = 'Not Billed'
 		if not self.delivery_status: self.delivery_status = 'Not Delivered'
+
+	def validate_lot_list(self):
+		for item in self.items:
+			item_sub_group = frappe.db.get_value("Item", item.item_code, "item_sub_group")
+			lot_check = frappe.db.get_value("Item Sub Group", item_sub_group, "lot_check")
+		#	sub_groups = ["Pole","Log","Block","Sawn", "Hakaries","Block (Special Size)"]
+		#	if item_sub_group in sub_groups:
+			if lot_check:
+				data = frappe.db.sql("select name, total_volume from `tabLot List` where branch='{0}' and item = '{1}' and name='{2}' and docstatus=1 and (sales_order is NULL OR sales_order ='')".format(self.branch, item.item_code, item.lot_number), as_dict=1)
+				if not data:
+					frappe.throw("Invalid Lot selection, Please check Branch and Material")
+				#else:
+				#	for a in data:
+				#		frappe.msgprint("{0} and {1}".format(a.total_volume, item.qty))
+				#		balance = flt(a.total_volume) - flt(item.qty)
+				#		if flt(a.total_volume) < flt(item.qty):
+				#			frappe.throw("Not available balance {0} in the selected Lot {1}".format(balance, item.lot_number))
+				#		else:
+				#			item.lot_balance_volume = balance
+	def update_lot_onsubmit(self):
+		for item in self.items:
+			if item.lot_number:
+				frappe.db.sql('update `tabLot List` set sales_order = "{0}" where name = "{1}"'.format(self.name, item.lot_number))	
+	
+	def update_lot_oncancel(self):
+		for item in self.items:
+			if item.lot_number:
+				frappe.db.sql('update `tabLot List` set sales_order = " " where name = "{0}"'.format(item.lot_number))	
+
+	def calculate_transportation(self):
+		total_qty = 0
+		for a in self.items:
+			total_qty += flt(a.qty)
+
+		self.total_quantity = total_qty
+		self.transportation_charges = round(flt(self.total_quantity) * flt(self.total_distance) * flt(self.transportation_rate), 2)
+		self.discount_amount = flt(self.discount_or_cost_amount) - flt(self.transportation_charges) - flt(self.loading_cost) - flt(self.additional_cost)
 
 	def validate_mandatory(self):
 		# validate transaction date v/s delivery date
@@ -160,10 +202,19 @@ class SalesOrder(SellingController):
 	def on_submit(self):
 		self.check_credit_limit()
 		self.update_reserved_qty()
-
 		frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype, self.company, self.base_grand_total, self)
 
 		self.update_prevdoc_status('submit')
+		#if self.po_no:
+		#	self.update_product_requisition(action="Submit")
+		if self.naming_series == "Timber Products":
+			self.update_lot_onsubmit()
+
+
+	def check_transporter_amount(self):
+		trans_amount = round(flt(self.total_quantity) * flt(self.total_distance) * flt(self.transportation_rate), 2)
+		if flt(self.transportation_charges) != flt(trans_amount):
+			frappe.throw("The transportation charges is calculated wrongly. Please save again")
 
 	def on_cancel(self):
 		# Cannot cancel closed SO
@@ -177,6 +228,11 @@ class SalesOrder(SellingController):
 		self.update_prevdoc_status('cancel')
 
 		frappe.db.set(self, 'status', 'Cancelled')
+		#if self.po_no:
+		#	self.update_product_requisition(action = 'Cancell')
+
+		if self.naming_series == "Timber Products":
+			self.update_lot_oncancel()
 
 	def check_credit_limit(self):
 		from erpnext.selling.doctype.customer.customer import check_credit_limit
@@ -256,12 +312,49 @@ class SalesOrder(SellingController):
 		pass
 
 	def before_submit(self):
+		self.check_transporter_amount()
 		self.get_selling_rate()
 
 	def before_update_after_submit(self):
 		self.validate_drop_ship()
 		self.validate_supplier_after_submit()
 		#self.get_selling_rate()
+
+	def update_product_requisition(self, action):
+		''' Ver.3.0.191222 Begins, NRDCLCRM, CRMNRDCL, NRDCL CRM, CRM NRDCL '''
+		# Following if condition added by SHIV on 2019/12/22
+		if self.customer_order:
+			return
+		''' Ver.3.0.191222 Ends'''
+		if self.po_no:
+			for a in frappe.db.sql("select name, item_code, qty, balance from `tabProduct Requisition Item` where parent = '{0}'".format(self.po_no), as_dict=True):
+				so_qty = 0.0
+				
+				for i in self.items:
+					if i.item_code == a.item_code:
+						so_qty += flt(i.qty)
+
+				doc = frappe.get_doc("Product Requisition Item", a.name)
+				actual_balance = a.balance
+				#frappe.throw("{0} and {1}".format(actual_balance, so_qty))
+				if action == "Cancell":
+					new_balance = flt(actual_balance) + flt(so_qty)
+				else:
+					if actual_balance >= so_qty:
+						new_balance = flt(actual_balance) - flt(so_qty)
+					else:
+						frappe.throw("Balance Quantity in PR is less than allocated quantity in SO")
+
+				doc.db_set("balance", new_balance)
+
+		delivered_flag = 1
+		for a in frappe.db.sql("select balance from `tabProduct Requisition Item` where parent = '{0}'".format(self.po_no), as_dict=True):
+			if a.balance > 0:
+				delivered_flag = 0
+		if delivered_flag == 1:
+			doc1 = frappe.get_doc("Product Requisition", self.po_no)
+			doc1.db_set("delivered", "1")
+
 
 	def validate_supplier_after_submit(self):
 		"""Check that supplier is the same after submit if PO is already made"""
@@ -318,23 +411,39 @@ class SalesOrder(SellingController):
 		mcount = month_map[reference_doc.recurring_type]
 		self.set("delivery_date", get_next_date(reference_doc.delivery_date, mcount,
 						cint(reference_doc.repeat_on_day_of_month)))
-	
+
 	def get_selling_rate(self):
+		''' Ver.3.0.191222 Begins, NRDCLCRM, CRMNRDCL, NRDCL CRM, CRM NRDCL '''
+		# Following if condition added by SHIV on 2019/12/22
+		if self.customer_order:
+			return
+		''' Ver.3.0.191222 Ends'''
+
 		for item in self.items:
 			item_sub_group = None
 			if not self.branch or not item.item_code or not self.transaction_date:
 				frappe.throw("Select Item Code or Branch or Posting Date")
-			rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}'""".format(item.price_template, item.item_code), as_dict =1)
+			rate=""
+			if self.location:
+				rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}' and location = '{2}'""".format(item.price_template, item.item_code, self.location), as_dict =1)
+			if not rate:
+				rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}'""".format(item.price_template, item.item_code), as_dict =1)
 			if not rate:
 				species,item_sub_group = frappe.db.get_value("Item", item.item_code, ["species","item_sub_group"])
 				if species:
 					timber_class, timber_type = frappe.db.get_value("Timber Species", species, ["timber_class", "timber_type"])
-					rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}' and timber_type = '{2}' and item_sub_group='{3}'""".format(item.price_template, timber_class, timber_type,item_sub_group), as_dict =1)
-			rate = rate and rate[0].rate or 0.0		
+					if self.location:
+						rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}' and timber_type = '{2}' and item_sub_group='{3}' and location = '{4}'""".format(item.price_template, timber_class, timber_type,item_sub_group, self.location), as_dict =1)
+					if not rate:
+						rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}' and timber_type = '{2}' and item_sub_group='{3}' and (location is NULL or location = '')""".format(item.price_template, timber_class, timber_type,item_sub_group), as_dict =1)
+
+			rate = rate and rate[0].rate or 0.0
 			if item.rate != rate:
 				frappe.throw("Selling Rate had changed since you last pulled. Please pull again")
 			if item.rate <= 0.0 or item.amount <= 0.0:
 				frappe.throw("Rate and Amount must be greater than 0")
+
+		
 
 def get_list_context(context=None):
 	from erpnext.controllers.website_list_for_contact import get_list_context
@@ -347,6 +456,18 @@ def get_list_context(context=None):
 	})
 
 	return list_context
+
+@frappe.whitelist()
+def get_lot_detail(branch, item_code, lot_number):
+	re = []
+	data = frappe.db.sql('select name, total_volume from `tabLot List` where branch="{0}" and item = "{1}" and name="{2}" and docstatus = 1'.format(branch, item_code, lot_number), as_dict=1)
+	sub_group = frappe.db.get_value("Item", item_code, "item_sub_group")
+	lot_check = frappe.db.get_value("Item Sub Group", sub_group, "lot_check")
+	if data:
+		for a in data:
+			re.append({'name':a.name, 'total_volume':a.total_volume, 'sub_group':sub_group, 'lot_check':lot_check})
+		return re
+
 
 @frappe.whitelist()
 def close_or_unclose_sales_orders(names, status):
@@ -487,6 +608,8 @@ def make_sales_invoice(source_name, target_doc=None, ignore_permissions=False):
 			"doctype": "Sales Invoice",
 			"field_map": {
 				"naming_series": "naming_series",
+			#	"loading_rate" : "rate_per_unit",
+                        #        "loading_cost" : "total_loading_amount"
 			},
 			"field_map": {
 				"party_account_currency": "party_account_currency"

@@ -9,6 +9,300 @@ from erpnext.hr.hr_custom_functions import get_month_details, get_payroll_settin
 from datetime import timedelta, date
 from erpnext.custom_utils import get_branch_cc, get_branch_warehouse
 
+def update_ss():
+        count = 1
+        for a in frappe.db.sql(" select name from `tabSalary Structure` where is_active = 'Yes'", as_dict = 1):
+                doc = frappe.get_doc("Salary Structure", a.name)
+                count += 1
+                doc.save(ignore_permissions = True)
+                print a.name, count
+
+
+def update_royalty():
+	for a in frappe.db.sql("select docstatus, name, po_no from `tabSales Order` where po_no in (select name from `tabProduct Requisition` where supply_rate = 'Concessional Royalty')", as_dict=True):
+		frappe.db.sql("Update `tabSales Order` set supply_rate = 'Concessional Royalty' where name = '{0}'".format(a.name))
+
+def update_leave_allocation():
+	for a in frappe.db.sql("select name, carry_forwarded_leaves, total_leaves_allocated, employee, leave_encashment, encashed_days from `tabLeave Allocation` where from_date = '2020-01-01' and to_date = '2020-12-31' and docstatus = 1", as_dict=True):
+		if a.leave_encashment:
+			frappe.db.sql("update `tabLeave Allocation` set carry_forwarded_leaves= '{0}', total_leaves_allocated = '{1}', leave_encashment= '{2}', encashed_days = '{3}' where employee = '{4}' and from_date='2019-12-01' and to_date = '2019-12-31'".format(a.carry_forwarded_leaves, a.total_leaves_allocated, a.leave_encashment, a.encashed_days, a.employee))
+		frappe.db.sql("update `tabLeave Allocation` set docstatus = 2 where name = '{0}'".format(a.name))
+				
+def update_product_requisition1():
+	for a in frappe.db.sql("select name, parent, item_code, balance, qty  from `tabProduct Requisition Item` where parent = 'PREQ191970'", as_dict=True):
+		balance_qty = 0.00
+		so_qty = 0.00
+		for b in frappe.db.sql("select soi.qty as qty, soi.item_code as item_code from `tabSales Order` so inner join `tabSales Order Item` soi on so.name = soi.parent where so.docstatus = 1 and so.po_no = '{0}'".format(a.parent), as_dict=True):
+			so_qty += flt(b.qty)
+		balance_qty = flt(a.qty) - flt(so_qty)
+		print("{0} and {1} and {2}".format(balance_qty, a.qty, so_qty))
+		frappe.db.sql("update `tabProduct Requisition Item` set balance = '{0}' where name = '{1}'".format(balance_qty, a.name))
+
+def update_product_requisition():
+	for i in frappe.db.sql("select name from `tabProduct Requisition`", as_dict=True):
+		balance_qty = 0.00
+		so_qty = 0.00
+
+		for b in frappe.db.sql("select soi.qty as qty, soi.item_code as item_code from `tabSales Order` so inner join `tabSales Order Item` soi on so.name = soi.parent where so.docstatus = 1 and so.po_no = '{0}'".format(a.parent), as_dict=True):
+			so_qty += flt(b.qty)
+		balance_qty = flt(a.qty) - flt(so_qty)
+		frappe.db.sql("update `tabProduct Requisition Item` set balance = '{0}' where name = '{1}'".format(balance_qty, a.name))
+
+def update_pr():
+	for a in frappe.db.sql("select name from `tabProduct Requisition`", as_dict=True):
+		delevery_flag = 1
+		for b in frappe.db.sql("select name, parent, balance from `tabProduct Requisition Item` where parent = '{0}'".format(a.name), as_dict=True):
+			if b.balance > 0:
+				delevery_flag = 0
+		if delevery_flag == 1:
+			frappe.db.sql("update `tabProduct Requisition` set delivered = '1' where name = '{0}'".format(a.name))
+	
+def check_vehicle():
+	listed_vehicle = []
+	i = 0
+	for a in frappe.db.sql("select name, vehicle_no, drivers_name, common_pool, self_arranged from `tabVehicle` where vehicle_status = 'Active' and (common_pool = 1 or self_arranged = 1) order by creation desc", as_dict=True):
+		vehicle = a.vehicle_no
+                cond = "upper(vehicle_no)"
+                for x in [' ', '+', '-', '(', ')', '/', '#']:
+                        vehicle = vehicle.replace(x, '')
+                        cond = "replace({},'{}','')".format(cond, x)
+                cond += " = '{}'".format(vehicle)
+		if a.name not in listed_vehicle:
+			#print(str(i), str(a.vehicle_no), str(a.common_pool), str(a.self_arranged))
+			i += 1
+			for b in frappe.db.sql("select name, vehicle_no, common_pool, self_arranged from `tabVehicle` where {} and name != '{}'".format(cond, a.name), as_dict=True):
+				print(str(i), str(a.vehicle_no), str(a.common_pool), str(a.self_arranged), str(b.vehicle_no), str(b.common_pool), str(b.self_arranged))	
+					
+
+def update_lot_stock_entry():
+	for a in frappe.db.sql("select name, parent, lot_list from `tabStock Entry Detail` where lot_list is not NULL and lot_list!='' and docstatus = 1", as_dict=1):
+		frappe.db.sql("update `tabLot List` set stock_entry = '{0}' where name = '{1}'".format(a.parent, a.lot_list))
+		print("Lot No. ===> {0}   Stock Entry ===> {1}".format(a.lot_list, a.parent))
+
+def update_sws_contribution():
+        for a in frappe.db.sql("select name, employee, employee_name, employee_grade from `tabSalary Structure`",  as_dict=1):
+                sws_amount = frappe.db.get_value("Employee Grade", a.employee_grade, "sws_contribution")
+                frappe.db.sql("update `tabSalary Detail` set amount = %s where parent = %s and salary_component = 'SWS'",(sws_amount, a.name))
+                print("SS   ===> {0}   === {1} ==== {2} ===> {3}".format(a.name, a.employee_grade, sws_amount, a.employee))
+
+
+def update_si_location():
+        for a in frappe.db.sql("select name, location, delivery_note, parent from `tabSales Invoice Item`", as_dict=1):
+                if not a.location:
+                        location_name = frappe.db.get_value("Delivery Note", a.delivery_note, "location")
+                        if location_name:
+                                frappe.db.sql("update `tabSales Invoice` set location = '{0}' where name = '{1}'".format(location_name, a.parent))
+                                frappe.db.sql("update `tabSales Invoice Item` set location = '{0}' where name = '{1}'".format(location_name, a.name))  
+
+
+def update_production_reading():
+	for a in frappe.db.sql("select i.name as name, i.reading as reading, i.item_group as item_group, i.item_sub_group as sub_group, p.production_type as production_type from `tabProduction` p, `tabProduction Product Item` i where p.name = i.parent and p.docstatus = 1", as_dict=1):
+		if a.item_group != "Mineral Products" and a.production_type == "Adhoc":
+			if a.sub_group == "Log":
+				if a.reading < 5:
+					reading_select = "5 ft Below (Log)"
+				else:
+					reading_select = "5 ft Above (Log)"
+			elif a.sub_group == "Pole":
+				if a.reading < 6:
+					reading_select == "0 - 6 ft (Pole)"
+                                elif a.reading > 6 and a.reading < 12.1:
+					reading_select == "6.1 - 12 ft (Pole)"
+                                elif a.reading > 12 and a.reading < 17.11:
+					reading_select == "12.1 - 17.11 ft (Pole)"
+                                elif a.reading > 17.11:
+					reading_select == "18 ft Above (Pole)"
+			frappe.db.sql("Update `tabProduction Product Item` set reading_select = '{0}' where name = '{1}'".format(reading_select, a.name))
+		if a.item_group == "Mineral Products":
+			frappe.db.sql("Update `tabProduction Product Item` set reading_select = '' where name = '{0}'".format(a.name))
+			print("Group :  {3} Name : {0} and reading_select : {1} reading : {2}".format(a.name, reading_select, a.reading, a.item_group))	
+			
+		 
+
+def update_production_total_qty():
+        for a in frappe.db.sql("select name from `tabProduction` where name ='PRO190700014'", as_dict=1):
+                raw_item = frappe.db.sql("select sum(qty) as total_qty from `tabProduction Material Item` where parent = '{0}'".format(a.name), as_dict=True)
+                production_item = frappe.db.sql("select sum(qty) as total_qty from `tabProduction Product Item` where parent = '{0}'".format(a.name), as_dict=True)
+                if raw_item[0]['total_qty'] > 0:
+                        frappe.db.sql("update `tabProduction` set total_raw_material_qty = '{0}' where name = '{1}'".format( raw_item[0]['total_qty'], a.name))
+
+                if production_item[0]['total_qty'] > 0:
+                        frappe.db.sql("update `tabProduction` set total_production_qty = '{0}' where name = '{1}'".format(production_item[0]['total_qty'], a.name))
+                print("Production ===> {0}  === {1} ==== {2}".format(production_item[0]['total_qty'], a.name, production_item))
+
+
+def replace_discount_to_additional_amount():
+	for a in frappe.db.sql("select name, discount_or_cost_amount from `tabSales Order` where discount_or_cost_amount < 0", as_dict=1):
+		add_amount = a.discount_or_cost_amount * -1
+		#frappe.db.sql("update `tabSales Order` set additional_cost ='{0}' where name = '{1}'".format(add_amount, a.name))
+		frappe.db.sql("update `tabSales Order` set discount_or_cost_amount = 0 where name = '{0}'".format( a.name))
+		print("Updation of " + str(a.name) + " - " + str(a.discount_or_cost_amount) + " - " + str(add_amount))
+		
+
+def update_production_20190225():
+        num = 0
+        for a in frappe.db.sql("select a.name, a.posting_date from tabProduction a where docstatus = 1 and not exists (select 1 from  `tabGL Entry` b where b.voucher_no = a.name) order by a.posting_date asc, a.posting_time asc", as_dict=1):
+                print(a.name)
+                doc = frappe.get_doc("Production", a.name)
+                doc.make_products_gl_entry()
+                doc.make_raw_material_gl_entry()
+                num = num + 1
+                if num % 20 == 0:
+                        frappe.db.commit()
+        frappe.db.commit()
+
+def update_employment_status():
+	for a in frappe.db.sql("select name, status from `tabEmployee`", as_dict=1):
+		if a.status == "Active":
+			frappe.db.sql("update `tabEmployee` set employment_status = 'In Service' where name = %s", a.name)
+			print("Employment Status ===> Active")
+		elif a.status == "Left":
+			frappe.db.sql("update `tabEmployee` set employment_status = 'Left' where name = %s", a.name)
+			print("Employment Status ==> Left")
+
+def update_asset_1():
+	for a in frappe.db.sql("select a.name, a.gross_purchase_amount as gross, b.accumulated_depreciation_amount as accu from tabAsset a, `tabDepreciation Schedule` b where a.name = b.parent and a.docstatus = 1 and a.value_after_depreciation = 0 and a.gross_purchase_amount != a.opening_accumulated_depreciation and b.schedule_date = '2019-03-31'", as_dict=1):
+		print(a.name)
+		frappe.db.sql("update tabAsset set value_after_depreciation = %s, status = 'Partially Depreciated', disable_depreciation = 0 where name = %s", (flt(a.gross) - flt(a.accu), a.name))
+
+def update_asset_dtl():
+	for a in frappe.db.sql("select name from `tabAsset` where docstatus = 1", as_dict=1):
+		print("**** Activities are disabled, Remove # if you want to run the function *****")
+		#frappe.db.sql("Delete from `tabJournal Entry` where name in (select parent from `tabJournal Entry Account` where reference_name = %s)", a.name)
+		#frappe.db.sql("Delete from `tabJournal Entry Account` where reference_name = %s", a.name)
+		#frappe.db.sql("Delete from `tabGL Entry` where against_voucher = %s", a.name)
+		#frappe.db.sql("Delete from `tabAsset` where name = %s", a.name)
+		#frappe.db.sql("Delete from `tabDepreciation Schedule` where parent = %s", a.name)
+
+def update_production_20190225():
+        num = 0
+        for a in frappe.db.sql("select a.name, a.posting_date from tabProduction a where docstatus = 1 and not exists (select 1 from  `tabGL Entry` b where b.voucher_no = a.name) order by a.posting_date asc, a.posting_time asc", as_dict=1):
+                print(a.name)
+                doc = frappe.get_doc("Production", a.name)
+                doc.make_products_gl_entry()
+                doc.make_raw_material_gl_entry()
+                num = num + 1
+                if num % 20 == 0:
+                        frappe.db.commit()
+        frappe.db.commit()
+
+
+
+def update_mr():
+	for a in frappe.db.sql("select name, owner from `tabMaterial Request`", as_dict=1):
+		for b in frappe.db.sql("select employee_name, name from `tabEmployee` where user_id=%s", a.owner, as_dict=1):
+			creator = b.name
+			creator_name = b.employee_name
+		frappe.db.sql("update `tabMaterial Request` set creator =%s, creator_name =%s where name = %s", (creator, creator_name, a.name))
+
+
+def update_pol_1():
+	for a in frappe.db.sql("select name from tabPOL where docstatus = 1", as_dict=1):
+		frappe.db.sql("update tabPOL set docstatus = 0 where name = %s", a.name)
+		frappe.db.sql("delete from `tabGL Entry` where voucher_no = %s", a.name)
+		frappe.db.sql("delete from `tabStock Ledger Entry` where voucher_no = %s", a.name)
+		print(a.name)
+		doc = frappe.get_doc("POL", a.name)
+		doc.submit()
+
+def update_si_today():
+	for a in frappe.db.sql("select transportation_charges as tc, name from `tabSales Invoice` where docstatus = 0", as_dict=1):
+		frappe.db.sql("update `tabSales Invoice` set transportation_charges = %s where name = %s", (round(flt(a.tc), 2), a.name))
+		print(str(a.name) + " ==> " + str(round(flt(a.tc), 2)) + " :::: " + str(a.tc))
+
+def update_si():
+	for a in frappe.db.sql("select name, net_total, total_advance from `tabSales Invoice` where posting_date > '2018-12-31' and outstanding_amount > 0", as_dict=1):
+		for b in frappe.db.sql("select name, credit, debit from `tabGL Entry` where voucher_no = %s and account != 'Advance from Customer - NRDCL'", a.name, as_dict=1):	
+			if b.credit and b.credit != a.net_total and b.credit != a.total_advance:
+				print(str(a.name) + " ==> " + str(a.net_total) + " >>> " + str(b.credit))
+				frappe.db.sql("update `tabGL Entry` set credit = %s, credit_in_account_currency = %s where name = %s", (a.net_total, a.net_total, b.name))
+			if b.debit and b.debit != a.net_total and b.debit != a.total_advance:
+				frappe.db.sql("update `tabGL Entry` set debit = %s, debit_in_account_currency = %s where name = %s", (a.net_total, a.net_total, b.name))
+				print(str(b.name) + " " + str(a.name) + " ==> " + str(a.net_total) + " >>> " + str(b.debit))
+				#frappe.db.sql("")
+
+def update_dn():
+	for a in frappe.db.sql("select b.parent, b.name, a.transportation_rate as r, a.total_distance as d, b.qty, b.rate from `tabDelivery Note` a, `tabDelivery Note Item` b where a.name = b.parent and a.transportation_charges > 0 and a.docstatus != 2", as_dict=1):
+		nr = flt(a.r) * flt(a.d)
+		net = nr + flt(a.rate)
+		nt = flt(net) * flt(a.qty)
+		print(str(a.parent) + " ==> " + str(net) + " >>> " + str(nt))
+		frappe.db.sql("update `tabDelivery Note Item` set net_rate = %s, net_amount = %s, base_net_rate = %s, base_net_amount = %s where name = %s", (net, nt, net, nt, a.name))
+
+
+	"""for a in frappe.db.sql("select a.name, a.transportation_charges as tc, a.total from `tabDelivery Note` a where a.transportation_charges > 0 and a.docstatus != 2", as_dict=1):
+		nt = flt(a.tc) + flt(a.total)
+		print(str(a.name) + " ==> " + str(nt))
+		in_word = frappe.utils.money_in_words(nt)
+		frappe.db.sql("update `tabDelivery Note` set net_total = %s, grand_total = %s, in_words = %s where name = %s", (nt, nt, in_word, a.name))	
+
+	for a in frappe.db.sql("select a.discount_or_cost_amount as dc, a.branch, a.name, sum(b.qty) as qty, b.against_sales_order as so from `tabDelivery Note` a, `tabDelivery Note Item` b where a.name = b.parent and a.transportation_charges > 0 and a.docstatus != 2 group by a.name", as_dict=1):
+		d = frappe.get_doc("Sales Order", a.so).total_distance
+		c = flt(d) * flt(a.qty) * 13.23
+		print(str(a.name) + " ==> " + str(c))
+		tdc = flt(a.dc) - flt(c)
+		frappe.db.sql("update `tabDelivery Note` set transportation_rate = %s, total_quantity = %s, total_distance = %s, transportation_charges = %s, discount_amount = %s where name = %s", (13.23, flt(a.qty), flt(round(d, 2)), flt(c), flt(tdc),  a.name))"""
+
+def update_consumed_budget_direct_payment():
+        ml = frappe.db.sql("select p.name as name, p.posting_date as posting_date, p.cost_center as cost_center, p.debit_account as budget_account, p.amount as amount  from `tabDirect Payment` p where p.payment_type='payment' and p.name not in (select po_no from `tabConsumed Budget`)", as_dict=1)
+        for a in ml:
+                dc = frappe.new_doc("Committed Budget")
+                dc.account = a.budget_account
+                dc.cost_center = a.cost_center
+                dc.po_no = a.name
+                dc.po_date = a.posting_date
+                dc.amount = a.amount
+                dc.poi_name = a.name
+                dc.date = a.posting_date
+                dc.flags.ignore_permissions=1
+                dc.submit()
+
+                cb = frappe.new_doc("Consumed Budget")
+                cb.account = a.budget_account
+                cb.cost_center = a.cost_center
+                cb.po_no = a.name
+                cb.po_date = a.posting_date
+                cb.amount = a.amount
+                cb.pii_name = a.name,
+                cb.com_ref = dc.name,
+                cb.date = a.posting_date
+                cb.flags.ignore_permissions=1
+                cb.submit()
+
+
+def update_consumed_budget():
+        ml = frappe.db.sql("select p.name as name, p.posting_date as posting_date, p.cost_center as cost_center, i.budget_account as budget_account, i.amount as amount  from `tabImprest Recoup` p, `tabImprest Recoup Item` i where p.name = i.parent and p.docstatus = 1 and p.name not in (select po_no from `tabConsumed Budget`)", as_dict=1)
+        for a in ml:
+                dc = frappe.new_doc("Committed Budget")
+                dc.account = a.budget_account
+                dc.cost_center = a.cost_center
+                dc.po_no = a.name
+                dc.po_date = a.posting_date
+                dc.amount = a.amount
+                dc.poi_name = a.name
+                dc.date = a.posting_date
+                dc.flags.ignore_permissions=1
+                dc.submit()
+
+                cb = frappe.new_doc("Consumed Budget")
+                cb.account = a.budget_account
+                cb.cost_center = a.cost_center
+                cb.po_no = a.name
+                cb.po_date = a.posting_date
+                cb.amount = a.amount
+                cb.pii_name = a.name,
+                cb.com_ref = dc.name,
+                cb.date = a.posting_date
+                cb.flags.ignore_permissions=1
+                cb.submit()
+
+
+def update_so():
+	for a in frappe.db.sql("select a.branch, a.name, a.transportation_charges as tc, sum(b.qty) as qty from `tabSales Order` a, `tabSales Order Item` b where a.name = b.parent and a.transportation_charges > 0 and a.docstatus != 2 group by a.name", as_dict=1):
+		distance = flt(a.tc) / (13.23 * flt(a.qty))
+		print(str(a.name) + " ==> " + str(distance))
+		frappe.db.sql("update `tabSales Order` set transportation_rate = %s, total_quantity = %s, total_distance = %s where name = %s", (13.23, flt(a.qty), flt(round(distance, 2)), a.name))
+
 #
 def update_equip():
 	for a in frappe.db.sql("select name, hsd_type from tabEquipment where hsd_type is not null", as_dict=1):
@@ -24,6 +318,26 @@ def populate_wh_branch():
 		row = doc.append("items",{})
 		row.branch = t.branch
 		row.save()
+
+def insert_vehicle():
+	doc = frappe.get_doc("Customer Order", "ORDR200400174")
+	for a in frappe.db.sql("select name as vehicle, drivers_name, contact_no, driver_cid, vehicle_capacity, '2' as noof_truck_load, '16' as quantity from `tabVehicle` where name = 'BP-2-A8593'", as_dict=True):
+		row = doc.append("vehicles", {})
+		row.save(ignore_permissions = True)
+
+
+def update_customer1():
+        cus = frappe.db.sql("select name from tabCustomer", as_dict=1)
+        count = 0
+        for a in cus:
+                #print a.name
+                count += 1
+		print a.name, count
+                doc = frappe.get_doc("Customer", a.name)
+                doc.customer_id = count
+                doc.save()
+                frappe.db.commit()
+
 
 def update_emp():
 	for a in frappe.db.sql("select name from tabEmployee where docstatus = 0", as_dict=1):

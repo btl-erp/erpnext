@@ -363,10 +363,19 @@ def remove_ref_doc_link_from_pe(ref_type, ref_no):
 		where reference_doctype=%s and reference_name=%s and docstatus < 2""", (ref_type, ref_no))
 
 	if linked_pe:
-		frappe.db.sql("""update `tabPayment Entry Reference`
-			set allocated_amount=0, modified=%s, modified_by=%s
-			where reference_doctype=%s and reference_name=%s
-			and docstatus < 2""", (now(), frappe.session.user, ref_type, ref_no))
+             	if ref_type == 'Sales Invoice':
+                        sales_order = frappe.db.sql("""select sales_order from `tabSales Invoice Item` where parent = %s""", (ref_no), as_dict=True)
+                        if sales_order:
+                                frappe.db.sql("""update `tabPayment Entry Reference`
+                                        set reference_doctype='Sales Order', reference_name = %s,
+                                        modified=%s, modified_by=%s
+                                        where reference_doctype=%s and reference_name=%s
+                                        and docstatus < 2""", (str(sales_order[0].sales_order), now(), frappe.session.user, ref_type, ref_no))
+           	else:
+			frappe.db.sql("""update `tabPayment Entry Reference`
+				set allocated_amount=0, modified=%s, modified_by=%s
+				where reference_doctype=%s and reference_name=%s
+				and docstatus < 2""", (now(), frappe.session.user, ref_type, ref_no))
 			
 		for pe in linked_pe:
 			pe_doc = frappe.get_doc("Payment Entry", pe)
@@ -584,6 +593,9 @@ def get_children():
 	return acc
 
 def make_asset_transfer_gl(self, asset, date, from_cc, to_cc, not_legacy_data=True):
+	if not frappe.db.get_single_value("Accounts Settings", "auto_accounting_for_inter_company"):
+		return
+
 	if from_cc == to_cc:
 		frappe.throw("From Cost Center and To Cost Center cannot be the same")
 	if getdate(date) > getdate(nowdate()):
@@ -655,29 +667,30 @@ def make_asset_transfer_gl(self, asset, date, from_cc, to_cc, not_legacy_data=Tr
 		ic_account = frappe.db.get_single_value("Accounts Settings", "intra_company_account")
 		if not ic_account:
 			frappe.throw("Setup Intra Company Accounts under Accounts Settings")
-		gl_entries.append(
-			prepare_gl(self, {
-			       "account": ic_account,
-			       "debit": asset.value_after_depreciation,
-			       "debit_in_account_currency": asset.value_after_depreciation,
-			       "against_voucher": asset.name,
-			       "against_voucher_type": "Asset",
-			       "cost_center": from_cc,
-			       "business_activity": asset.business_activity
-			})
-		)
+		if flt(asset.value_after_depreciation) > 0:
+			gl_entries.append(
+				prepare_gl(self, {
+				       "account": ic_account,
+				       "debit": asset.value_after_depreciation,
+				       "debit_in_account_currency": asset.value_after_depreciation,
+				       "against_voucher": asset.name,
+				       "against_voucher_type": "Asset",
+				       "cost_center": from_cc,
+				       "business_activity": asset.business_activity
+				})
+			)
 
-		gl_entries.append(
-			prepare_gl(self, {
-			       "account": ic_account,
-			       "credit": asset.value_after_depreciation,
-			       "credit_in_account_currency": asset.value_after_depreciation,
-			       "against_voucher": asset.name,
-			       "against_voucher_type": "Asset",
-			       "cost_center": to_cc,
-			       "business_activity": asset.business_activity
-			})
-		)
+			gl_entries.append(
+				prepare_gl(self, {
+				       "account": ic_account,
+				       "credit": asset.value_after_depreciation,
+				       "credit_in_account_currency": asset.value_after_depreciation,
+				       "against_voucher": asset.name,
+				       "against_voucher_type": "Asset",
+				       "cost_center": to_cc,
+				       "business_activity": asset.business_activity
+				})
+			)
 
 	make_gl_entries(gl_entries, cancel=0, update_outstanding="No", merge_entries=False)
 
@@ -709,7 +722,6 @@ def get_child_cost_centers(current_cs=None):
     		      if(c['parent_cost_center'] in allchilds):
         			 if(c['name'] not in allchilds):
         			    allchilds.append(str(c['name']));
-
 	return allchilds;
 
 ##

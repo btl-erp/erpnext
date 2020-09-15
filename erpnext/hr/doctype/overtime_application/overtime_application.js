@@ -15,6 +15,11 @@ frappe.ui.form.on('Overtime Application', {
 				frappe.set_route("List", "Journal Entry");
 			}, __("View"));
 		}
+
+		if(frm.doc.workflow_state == "Draft" || frm.doc.workflow_state == "Rejected"){
+			frm.set_df_property("approver", "hidden", 1);
+			frm.set_df_property("approver_name", "hidden", 1);
+		}
 	},
 	onload: function(frm) {
 		if(!frm.doc.posting_date) {
@@ -35,7 +40,7 @@ frappe.ui.form.on('Overtime Application', {
 		}
 	},
 	employee: function(frm) {
-		if (frm.doc.employee) {
+		if (frm.doc.employee && frm.doc.overtime_based_on == "Hourly") {
 			frappe.call({
 				method: "erpnext.hr.doctype.employee.employee.get_overtime_rate",
 				args: {
@@ -48,6 +53,21 @@ frappe.ui.form.on('Overtime Application', {
 				}
 			})
 		}	
+	},
+	overtime_based_on : function(frm) {
+	        if(frm.doc.employee && frm.doc.overtime_based_on == "Hourly") {
+                        frappe.call({
+                                method: "erpnext.hr.doctype.employee.employee.get_overtime_rate",
+                                args: {
+                                        employee: frm.doc.employee,
+                                },
+                                callback: function(r) {
+                                        if(r.message) {
+                                                frm.set_value("rate", r.message)
+                                        }
+                                }
+                        })
+                }
 	},
 	rate: function(frm) {
 		frm.set_value("total_amount", frm.doc.rate * frm.doc.total_hours)

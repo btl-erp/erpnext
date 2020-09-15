@@ -315,7 +315,19 @@ def get_data():
                                         "doctype": "Royalty Payment",
                                         "is_query_report": True,
                                 },
-				
+				{
+                                        "type": "report",
+                                        "name": "Daily Collection Report",
+                                        "label": "Daily Collection Report",
+                                        "doctype": "Payment Entry",
+                                        "is_query_report": True,
+                                },
+				{
+                                        "type": "report",
+                                        "name": "Transporter Payment Report",
+                                        "doctype": "Mechanical Payment",
+                                        "is_query_report": True
+                                },
 			]
 		},
 		{
@@ -466,7 +478,14 @@ def get_data():
                                         "is_query_report": True,
                                         "name": "Travel Report",
                                         "doctype": "Travel Claim"
+                                },
+				{
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "Salary Payable Report",
+                                        "doctype": "Salary Slip"
                                 }
+
 			]
 		},
                 {

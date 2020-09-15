@@ -421,6 +421,15 @@ cur_frm.fields_dict['production_order'].get_query = function(doc) {
 	}
 }
 
+cur_frm.fields_dict['items'].grid.get_field('lot_list').get_query = function(frm, cdt, cdn) {
+	var item = locals[cdt][cdn];
+        return {
+	 	query: "erpnext.controllers.queries.filter_lot_list",
+		filters: {'branch': cur_frm.doc.branch, 'item':item.item_code},
+		searchfield : "lot_no" 
+        }
+}
+
 cur_frm.cscript.purpose = function(doc, cdt, cdn) {
 	cur_frm.cscript.toggle_related_fields(doc);
 }
@@ -449,6 +458,19 @@ cur_frm.fields_dict['items'].grid.get_field('batch_no').get_query = function(doc
 			query : "erpnext.controllers.queries.get_batch_no",
 			filters: filters
 		}
+	}
+}
+
+cur_frm.cscript.lot_list = function(doc, cdt, cdn) {
+	var child = locals[cdt][cdn];
+	if(child.item_code && child.lot_list){
+		frappe.model.get_value("Lot List", {"name": child.lot_list}, "total_volume",
+			function(d){
+				console.log("Lot qty : " + d.total_volume);
+				frappe.model.set_value(cdt, cdn, "qty", d.total_volume);
+				frappe.model.set_value(cdt, cdn, "uom", "Cft");
+			}
+		);
 	}
 }
 

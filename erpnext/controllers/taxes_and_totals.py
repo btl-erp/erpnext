@@ -501,7 +501,13 @@ class calculate_taxes_and_totals(object):
 				total_amount_to_pay = flt(flt(self.doc.grand_total *
 					self.doc.conversion_rate, self.doc.precision("grand_total")) - self.doc.total_advance - tds_amount 
 						- flt(self.doc.base_write_off_amount), self.doc.precision("grand_total"))
-
+			#if self.doc.doctype == "Purchase Invoice":
+			#	if self.doc.charges:
+			#		total_charge = 0
+			#		for c in self.doc.charges:
+			#			total_charge += c.charges
+			#		total_amount_to_pay = flt(total_amount_to_pay - flt(total_charge), self.doc.precision("outstanding_amount"))
+					
 		if self.doc.doctype == "Sales Invoice":
 			self.doc.round_floats_in(self.doc, ["paid_amount"])
 			paid_amount = self.doc.paid_amount \
@@ -514,6 +520,12 @@ class calculate_taxes_and_totals(object):
 				flt(self.doc.change_amount), self.doc.precision("outstanding_amount"))
 					
 		elif self.doc.doctype == "Purchase Invoice":
+			#if self.doc.charges:
+			#	total_charge = 0
+			#	for c in self.doc.charges:
+			#		total_charge += c.charges
+			#	self.doc.outstanding_amount = flt(total_amount_to_pay - flt(total_charge), self.doc.precision("outstanding_amount"))
+			#else:
 			self.doc.outstanding_amount = flt(total_amount_to_pay, self.doc.precision("outstanding_amount"))
 		
 	def calculate_paid_amount(self):

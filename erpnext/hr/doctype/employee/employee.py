@@ -11,6 +11,7 @@ Version          Author          CreatedOn          ModifiedOn          Remarks
                                                                                 "Employee Group" master.
                                                                         2) health_contribution, employee_pf, employer_pf
                                                                                 moved from "HR Settings" to "Employment Group"
+2.0.190408        SHIV                             08/04/2019         Method update_retirement_age() created.
 --------------------------------------------------------------------------------------------------------------------------                                                                          
 '''
 
@@ -24,7 +25,7 @@ import frappe.permissions
 from frappe.model.document import Document
 from frappe.model.mapper import get_mapped_doc
 from erpnext.utilities.transaction_base import delete_events
-from erpnext.custom_utils import get_year_start_date, get_year_end_date, round5
+from erpnext.custom_utils import get_year_start_date, get_year_end_date, round5, check_future_date
 from frappe.utils.data import get_first_day, get_last_day, add_days
 
 
@@ -93,7 +94,12 @@ class Employee(Document):
 		self.validate_employment()
 		self.validate_employee_leave_approver()
 		self.validate_reports_to()
-	
+
+#		if self.passport_number:
+#			data = frappe.db.sql("select employee_name from `tabEmployee` where passport_number = '{0}'".format(self.passport_number), as_dict=True)
+#			if data:
+#				frappe.throw("Employee with this {0} Passport/CID No. is already registered with {1}".format(self.passport_number, data[0].employee_name))
+
 		if self.user_id:
 			self.company_email = self.user_id
 			self.toggle_user_enable()
@@ -109,6 +115,8 @@ class Employee(Document):
 		self.populate_work_history()
 		# Following method introduced by SHIV on 15/08/2018
 		self.populate_family_details()
+		# Following method introduced by SHIV on 08/04/2019
+                self.update_retirement_age()
     
 	def before_save(self):
 		if self.branch != self.get_db_value("branch") and  self.user_id:
@@ -118,8 +126,19 @@ class Employee(Document):
 		if self.user_id:
 			self.update_user()
 			self.update_user_permissions()
-		#self.post_casual_leave()
-		ss = frappe.db.get_value("Salary Structure", {"employee": self.name, "is_active": "Yes"}, "name")
+		self.post_casual_leave()
+		self.update_salary_structure()
+
+	def update_retirement_age(self):
+                ret = frappe.db.sql("""
+                                select date_add('{0}', INTERVAL retirement_age YEAR) as date_of_retirement
+                                from `tabEmployee Group` where name = '{1}'
+                """.format(getdate(self.date_of_birth), self.employee_group), as_dict=True)
+                if ret:
+                        self.date_of_retirement = ret[0].date_of_retirement
+
+        def update_salary_structure(self):
+                ss = frappe.db.get_value("Salary Structure", {"employee": self.name, "is_active": "Yes"}, "name")
 		if ss:
 			doc = frappe.get_doc("Salary Structure", ss)
 			doc.flags.ignore_permissions = 1
@@ -226,7 +245,15 @@ class Employee(Document):
                                                 "modified": nowdate()
                         })
                 else:
-                        pass
+                        if exists > 1:
+                                frappe.throw(_("Multiple entries for Self ({0} {1}) not permitted under family details.").format(self.name, self.employee_name), title="Duplicate Entry Found")
+                        else:
+                                for f in self.employee_family_details:
+                                        if f.relationship == "Self":
+                                                f.full_name     = self.employee_name
+                                                f.gender        = self.gender
+                                                f.date_of_birth = self.date_of_birth
+                                                f.cid_no        = self.passport_number
                 
 	def update_user_permissions(self):
 		if self.branch != self.get_db_value("branch") and  self.user_id:
@@ -282,6 +309,9 @@ class Employee(Document):
 		if self.date_of_birth and getdate(self.date_of_birth) > getdate(today()):
 			throw(_("Date of Birth cannot be greater than today."))
 
+		if self.relieving_date:
+                        check_future_date(self.relieving_date)
+
 		if self.date_of_birth and self.date_of_joining and getdate(self.date_of_birth) >= getdate(self.date_of_joining):
 			throw(_("Date of Joining must be greater than Date of Birth"))
 
@@ -311,6 +341,7 @@ class Employee(Document):
 				ss = frappe.get_doc("Salary Structure", name)
 				if ss:
 					ss.db_set("is_active", "No")
+					ss.db_set("to_date", self.relieving_date)
 
 			# Disabling Employee record after marked as "Left"
 			self.docstatus = 1
@@ -460,6 +491,13 @@ def make_salary_structure(source_name, target=None):
 	})
 	target.make_earn_ded_table()
 	return target
+
+@frappe.whitelist()
+def get_employee_passport_number(passport_no):
+        data = frappe.db.sql("select employee_name from `tabEmployee` where passport_number = '{0}'".format(passport_no), as_dict=True)
+        if data:
+                return data[0].employee_name
+
 
 @frappe.whitelist()
 def get_overtime_rate(employee):

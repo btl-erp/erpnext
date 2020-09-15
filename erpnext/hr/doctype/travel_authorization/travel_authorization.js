@@ -59,6 +59,10 @@ frappe.ui.form.on('Travel Authorization', {
 		}
 		
 		cur_frm.set_df_property("items", "read_only", frm.doc.travel_claim ? 1 : 0)
+
+		if(frm.doc.workflow_state == "Draft" || frm.doc.workflow_state == "Rejected"){
+                        frm.set_df_property("supervisor", "hidden", 1);
+		}
 	},
 	//Auto calculate next date on form render
 	"items_on_form_rendered": function(frm, grid_row, cdt, cdn) {
@@ -215,8 +219,10 @@ function update_advance_amount(frm) {
 		callback: function(r) {
 			if(r.message) {
 				frm.set_value("advance_amount_nu", flt(frm.doc.advance_amount) * flt(r.message))
-				frm.set_value("advance_amount", format_currency(flt(frm.doc.advance_amount), frm.doc.currency))
-				frm.set_value("estimated_amount", format_currency(flt(frm.doc.estimated_amount), frm.doc.currency))
+				frm.set_value("advance_amount", flt(frm.doc.advance_amount))
+				frm.set_value("estimated_amount", flt(frm.doc.estimated_amount))
+				//frm.set_value("advance_amount", format_currency(flt(frm.doc.advance_amount), frm.doc.currency))
+				//frm.set_value("estimated_amount", format_currency(flt(frm.doc.estimated_amount), frm.doc.currency))
 			}
 		}
 	})

@@ -11,24 +11,17 @@ from erpnext.accounts.utils import get_account_currency, get_fiscal_year
 from frappe.utils.data import add_days, date_diff
 from frappe.model.mapper import get_mapped_doc
 from datetime import timedelta
+from erpnext.custom_workflow import validate_workflow_states
 
 class TravelAuthorization(Document):
-	def get_status(self):
-                if self.workflow_state == "Draft":
-                        self.document_status = ""
-                if self.workflow_state == "Rejected":
-                        self.document_status = "Rejected"
-                if self.workflow_state == "Approved":
-                        self.document_status = "Approved"
-
 	def validate(self):
-		if not self.branch:
-			frappe.throw("Setup Branch in Emplpoyee Information and try again")
+		self.branch = frappe.db.get_value("Employee", self.employee, "branch")
+                self.cost_center = frappe.db.get_value("Employee", self.employee, "cost_center")
 		
-		if frappe.db.get_value("Employee", self.employee, "user_id") == self.supervisor:
-                        frappe.throw(_("Invalid supervisor"), title="Invalid Data")
+		#if frappe.db.get_value("Employee", self.employee, "user_id") == self.supervisor:
+                #        frappe.throw(_("Invalid supervisor"), title="Invalid Data")
 
-		self.get_status()
+		validate_workflow_states(self)
 		self.validate_travel_dates()
                 self.check_double_dates()
 		self.assign_end_date()
@@ -63,9 +56,9 @@ class TravelAuthorization(Document):
 			self.append("details", {"date": a.date, "halt": a.halt, "till_date": a.till_date, "no_days": a.no_days, "from_place": a.from_place, "halt_at": a.halt_at})
 
 	def on_submit(self):
-		self.get_status()
+		#self.get_status()
 		#self.check_double_dates()
-		self.validate_submitter()
+		#self.validate_submitter()
 		self.validate_travel_dates()
 		self.check_status()
 		self.check_advance()
@@ -207,9 +200,9 @@ class TravelAuthorization(Document):
 	##
 	# Allow only the approver to submit the document
 	##
-	def validate_submitter(self):
-		if self.supervisor != frappe.session.user:
-			frappe.throw("Only the selected supervisor can submit this document")
+	#def validate_submitter(self):
+	#	if self.supervisor != frappe.session.user:
+	#		frappe.throw("Only the selected supervisor can submit this document")
 
 
 	##
@@ -254,14 +247,15 @@ class TravelAuthorization(Document):
 def make_travel_claim(source_name, target_doc=None): 
 	def update_date(obj, target, source_parent):
 		target.posting_date = nowdate()
+		target.supervisor = None
 	
 	def transfer_currency(obj, target, source_parent):
 		if obj.halt:
-			target.from_place = ""
-			target.to_place = ""
+			target.from_place = None
+			target.to_place = None
 		else:
 			target.no_days = 1
-			target.halt_at = ""
+			target.halt_at = None
 		target.currency = source_parent.currency
 		target.dsa = source_parent.dsa_per_day
 		if target.currency == "BTN":
@@ -294,7 +288,8 @@ def make_travel_claim(source_name, target_doc=None):
 			},
 			"Travel Authorization Item": {
 				"doctype": "Travel Claim Item",
-				"postprocess": transfer_currency
+				"postprocess": transfer_currency,
+				"travel_authorization": "parent"
 			},
 		}, target_doc, adjust_last_date)
 	return doc

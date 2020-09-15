@@ -3,6 +3,8 @@
 
 {% include 'erpnext/selling/sales_common.js' %}
 
+cur_frm.add_fetch("rate_template", "rate", "transportation_rate")
+
 frappe.ui.form.on("Sales Order", {
 	onload: function(frm) {
 		/*erpnext.queries.setup_queries(frm, "Warehouse", function() {
@@ -32,18 +34,55 @@ frappe.ui.form.on("Sales Order", {
 			}
 		}*/
 	},
+
 	"discount_or_cost_amount": function(frm) {
-		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges))
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
 		cur_frm.refresh_field("discount_amount")
 	},
 
 	"transportation_charges": function(frm) {
-		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges))
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
 		cur_frm.refresh_field("discount_amount")
 	},
+
+	"additional_cost": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+        },
+
+	"loading_rate": function(frm) {
+		var total_qty = 0;
+		for (var i in cur_frm.doc.items) {
+			var item = cur_frm.doc.items[i];
+		        total_qty += item.qty;		
+			}
+		console.log("Loading Cost:" + total_qty);
+		cur_frm.set_value("loading_cost", flt(total_qty) * flt(frm.doc.loading_rate));
+
+	},
+
 	"loading_cost": function(frm) {
-		cur_frm.set_value("grand_total", flt(frm.doc.grand_total) + flt(frm.doc.loading_cost));
-	}
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+	},
+
+	"transportation_rate": function(frm) {
+		cur_frm.set_value("transportation_charges", flt(frm.doc.transportation_rate) * flt(frm.doc.total_distance) * flt(frm.doc.total_quantity))
+		cur_frm.trigger("transportation_charges")
+		cur_frm.refresh_field("transportation_charges")
+	},
+
+	"total_distance": function(frm) {
+		cur_frm.set_value("transportation_charges", flt(frm.doc.transportation_rate) * flt(frm.doc.total_distance) * flt(frm.doc.total_quantity))
+		cur_frm.trigger("transportation_charges")
+		cur_frm.refresh_field("transportation_charges")
+	},
+
+	"total_quantity": function(frm) {
+		cur_frm.set_value("transportation_charges", flt(frm.doc.transportation_rate) * flt(frm.doc.total_distance) * flt(frm.doc.total_quantity))
+		cur_frm.trigger("transportation_charges")
+		cur_frm.refresh_field("transportation_charges")
+	},
 });
 
 /*
@@ -323,6 +362,22 @@ frappe.ui.form.on("Sales Order", "refresh", function(frm) {
             }
         };
     });
+    cur_frm.set_query("rate_template", function() {
+        return {
+            "filters": {
+                "branch": frm.doc.branch
+            }
+        };
+    });
+    cur_frm.set_query("location", function() {
+        return{
+                "filters":{
+                        "branch": frm.doc.branch,
+			"is_disabled": 0
+                }
+        };
+    });
+
 })
 
 /*
@@ -375,10 +430,9 @@ cur_frm.fields_dict['items'].grid.get_field('price_template').get_query = functi
         var d = locals[cdt][cdn];
         return {
                 query: "erpnext.controllers.queries.price_template_list",
-                filters: {'item_code': d.item_code, 'transaction_date': frm.transaction_date, 'branch': frm.branch}
-        }
+	        filters: {'item_code': d.item_code, 'transaction_date': frm.transaction_date, 'branch': frm.branch, 'location': frm.location}
+	}
 }
-
 
 cur_frm.fields_dict['items'].grid.get_field('warehouse').get_query = function(frm, cdt, cdn) {
 	item = locals[cdt][cdn]
@@ -388,17 +442,34 @@ cur_frm.fields_dict['items'].grid.get_field('warehouse').get_query = function(fr
 	}
 }
 
+cur_frm.fields_dict['items'].grid.get_field('lot_number').get_query = function(frm, cdt, cdn) {
+        var item = locals[cdt][cdn];
+        return {
+                query: "erpnext.controllers.queries.filter_lots",
+                filters: {'branch': cur_frm.doc.branch, 'item':item.item_code},
+                searchfield : "lot_no"
+        }
+}
+
+
 // on_selection of price_template, auto load the seling rate for items
 frappe.ui.form.on("Sales Order Item", {
         "price_template": function(frm, cdt, cdn) {
                 d = locals[cdt][cdn]
+		 if(cur_frm.doc.location){
+                         loc = cur_frm.doc.location;
+                 }else{
+                         loc = "NA";
+                 }
+		console.log("Loc :" + loc);
                 frappe.call({
                         method: "erpnext.production.doctype.selling_price.selling_price.get_selling_rate",
                         args: {
                                 "price_list": d.price_template,
                                 "branch": cur_frm.doc.branch,
                                 "item_code": d.item_code,
-                                "transaction_date": cur_frm.doc.transaction_date
+                                "transaction_date": cur_frm.doc.transaction_date,
+				"location": loc
                         },
                         callback: function(r) {
                                 frappe.model.set_value(cdt, cdn, "price_list_rate", r.message)
@@ -410,6 +481,48 @@ frappe.ui.form.on("Sales Order Item", {
         },
 
 	"item_code": function(frm, cdt, cdn) {
-		frappe.model.set_value(cdt, cdn, "price_template", "") 
-}
+		var d = locals[cdt][cdn]; 
+		frappe.model.set_value(cdt, cdn, "price_template", "");
+		if(d.lot_number){ get_balance(frm, cdt, cdn); }
+	},
+
+	"lot_number": function(frm, cdt, cdn) {
+		var d = locals[cdt][cdn];
+		if(d.item_code && d.lot_number){ get_balance(frm, cdt, cdn); }
+        },
 })
+
+function get_balance(frm, cdt, cdn){
+         var d = locals[cdt][cdn];
+                 frappe.call({
+                        method: "erpnext.selling.doctype.sales_order.sales_order.get_lot_detail",
+                        args: {
+                                "branch": cur_frm.doc.branch,
+                                "item_code": d.item_code,
+                                "lot_number": d.lot_number,
+                        },
+                        callback: function(r) {
+                                console.log(r.message);
+                                if(r.message){
+                                        var balance = r.message[0]['total_volume'];
+					var lot_check = r.message[0]['lot_check']; 
+			        //	var item_sub_group = r.message[0]['sub_group']; 
+				//	var sub_groups = ["Pole","Log","Block","Sawn", "Hakaries","Field Sawn","Block (Special Size)"];
+                			if(lot_check)
+                			{
+                                        	console.log(balance);
+						if(balance < 0){
+                                                	frappe.msgprint("Not available volume under the selected Lot");
+                                        	}
+                                        	else{
+                                                	frappe.model.set_value(cdt, cdn, "qty", balance);
+                                        	}
+                                	}
+				}
+                                else{
+                                        frappe.msgprint("Invalid Lot Number. Please verify the lot number with Material and Branch");
+                                }
+                        }
+                });
+}
+

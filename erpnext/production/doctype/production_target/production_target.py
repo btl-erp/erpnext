@@ -4,6 +4,7 @@
 
 from __future__ import unicode_literals
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, getdate, rounded
 from erpnext.accounts.utils import get_child_cost_centers
@@ -31,11 +32,11 @@ class ProductionTarget(Document):
 	def calculate_value(self):
 		for a in self.items:
 			a.quantity = flt(a.quarter1) + flt(a.quarter2) + flt(a.quarter3) + flt(a.quarter4)
-			if flt(a.quantity) > 0 and flt(a.quantity) != flt(a.qty):
+			if flt(a.quantity) > 0 and flt(a.quantity,2) != flt(a.qty,2):
 				frappe.throw("Target Quantity (Production) should be equal to {0} for {1}".format(frappe.bold(str(a.qty)), frappe.bold(a.production_group)))
 		for a in self.disposal:
 			a.quantity = flt(a.quarter1) + flt(a.quarter2) + flt(a.quarter3) + flt(a.quarter4)
-			if flt(a.quantity) > 0 and flt(a.quantity) != flt(a.qty):
+			if flt(a.quantity) > 0 and flt(a.quantity,2) != flt(a.qty,2):
 				frappe.throw("Target Quantity (Sales) should be equal to {0} for {1}".format(frappe.bold(str(a.qty)), frappe.bold(a.production_group)))
 
 def get_target_value(which, cost_center, production_group, fiscal_year, from_date, to_date, is_location=None):
@@ -48,10 +49,12 @@ def get_target_value(which, cost_center, production_group, fiscal_year, from_dat
 		cond = " a.location = '{0}'".format(cost_center)
 	else:
 		all_ccs = get_child_cost_centers(cost_center)
-		cond = " a.cost_center in {0}".format(tuple(all_ccs))
-
+		if len(all_ccs) > 1:
+			cond = " a.cost_center in {0}".format(tuple(all_ccs))
+		else:
+			cond = " a.cost_center in ('DUMMY')"
+	
 	query = "select sum(quantity) as total, sum(quarter1) as q1, sum(quarter2) as q2, sum(quarter3) as q3, sum(quarter4) as q4 from `tabProduction Target` a, `tab{0} Target Item` b where a.name = b.parent and {1} and a.fiscal_year = '{2}' and b.production_group = '{3}'".format(which, cond, fiscal_year, production_group)
-
 	qty = frappe.db.sql(query, as_dict=True)
 
 	q1 = qty and qty[0].q1 or 0

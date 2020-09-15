@@ -93,6 +93,11 @@ def get_data():
 			"icon": "icon-star",
 			"items": [
 				{
+                                        "type": "doctype",
+                                        "name": "Equipment Request",
+                                        "description": _("Equipment Request"),
+                                },
+				{
 					"type": "doctype",
 					"name": "Equipment Hiring Form",
 					"description": _("Equipment Hiring Form"),
@@ -160,6 +165,12 @@ def get_data():
 					"type": "report",
 					"is_query_report": True,
 					"name": "Workshop Progress Report",
+					"doctype": "Job Card"
+				},
+				{
+					"type": "report",
+					"is_query_report": True,
+					"name": "Equipment Maintenance History",
 					"doctype": "Job Card"
 				},
 			]

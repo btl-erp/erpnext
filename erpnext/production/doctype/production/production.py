@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
+'''
+------------------------------------------------------------------------------------------------------------------------------------------
+Version          Author         Ticket#           CreatedOn          ModifiedOn          Remarks
+------------ --------------- --------------- ------------------ -------------------  -----------------------------------------------------
+1.0.190401       SHIV		                                     2019/04/01         Refined process for making SL and GL entries
+------------------------------------------------------------------------------------------------------------------------------------------                                                                          
+'''
 
 from __future__ import unicode_literals
 import frappe
@@ -18,29 +25,96 @@ class Production(StockController):
 		self.check_cop()
 		self.validate_data()
 		self.validate_warehouse()
+		self.validate_supplier()
 		self.validate_items()
 		self.validate_posting_time()
+		self.validate_lot_list()
 
 	def validate_data(self):
 		if self.production_type == "Adhoc" and not self.adhoc_production:
 			frappe.throw("Select Adhoc Production to Proceed")
 		if self.production_type == "Planned":
 			self.adhoc_production = None
+		if self.work_type == "Private" and not self.supplier:
+			frappe.throw("Contractor is Mandatory if work type is private")
+
+	def validate_lot_list(self):
+		for item in self.raw_materials:
+			if item.lot_list:
+				lot_dtl = frappe.db.sql("""
+							select lot_no from `tabLot List` ll
+							where ll.docstatus = 1 and (ll.sales_order is NULL or ll.sales_order = '')
+							and ll.lot_no = '{0}'
+							and (ll.sales_order is NULL or ll.sales_order ='')
+							and (ll.production is NULL or ll.production ='')
+						""".format(item.lot_list), as_dict = True)
+				if not lot_dtl:
+					frappe.throw("Lot No {0} is either sold or previously transferred".format(item.lot_list))
+	def update_lot_list(self, action):
+		for item in self.raw_materials:
+			if item.lot_list:
+				if action == "submit":
+					frappe.db.sql("update `tabLot List` set production='{0}' where name = '{1}'".format(self.name, item.lot_list))
+				elif action == "cancel":
+					frappe.db.sql("update `tabLot List` set production='' where name = '{0}'".format(item.lot_list))
 
 	def validate_warehouse(self):
 		self.validate_warehouse_branch(self.warehouse, self.branch)
 
+	def validate_supplier(self):
+                if self.work_type == "Private" and not self.supplier:
+                        frappe.throw("Supplier Is Mandiatory For Production Carried Out By Others")
+
 	def validate_items(self):
 		prod_items = self.get_production_items()
+		total_raw_material_qty = total_production_qty = 0
 		for item in self.get("raw_materials"):
 			if item.item_code not in prod_items:
 				frappe.throw(_("{0} is not a Production Item").format(item.item_code))
 			if flt(item.qty) <= 0:
 				frappe.throw(_("Quantity for <b>{0}</b> cannot be zero or less").format(item.item_code))
 
+                        """ ++++++++++ Ver 1.0.190401 Begins ++++++++++ """
+                        # Following code added by SHIV on 2019/04/01
+                        item.business_activity = self.business_activity
+                        item.cost_center = self.cost_center
+                        item.warehouse = self.warehouse
+                        item.expense_account = get_expense_account(self.company, item.item_code)
+                        """ ++++++++++ Ver 1.0.190401 Ends ++++++++++++ """
+			if self.business_activity == "Timber":
+				if item.uom == "Cft":
+					total_raw_material_qty += item.qty
+			else:
+				total_raw_material_qty += item.qty
+				
+
 		for item in self.get("items"):
+			if self.business_activity == "Timber":
+				if item.uom == "Cft":
+					total_production_qty += item.qty
+			else:
+				total_production_qty += item.qty
+				
+
 			item.production_type = self.production_type
 			item.item_name, item.item_group, item.item_sub_group, item.timber_species = frappe.db.get_value("Item", item.item_code, ["item_name", "item_group", "item_sub_group", "species"])
+			if item.item_group != "Mineral Products":
+				if item.reading_select == "5 ft Above (Log)":
+					item.reading = "5.5"
+				elif item.reading_select == "5 ft Below (Log)":
+					item.reading = "4.5"
+				elif item.reading_select == "0 - 6 ft (Pole)":
+					item.reading = "5.5"
+				elif item.reading_select == "6.1 - 12 ft (Pole)":
+					item.reading = "10"
+				elif item.reading_select == "12.1 - 17.11 ft (Pole)":
+					item.reading = "15"
+				elif item.reading_select == "18 ft Above (Pole)":
+					item.reading = "19"
+				elif item.reading_select == "0 - 6 ft (Hakaries)":
+					item.reading = "5.5"
+				else:
+					pass
 
 			if item.item_code not in prod_items:
 				frappe.throw(_("{0} is not a Production Item").format(item.item_code))
@@ -57,7 +131,7 @@ class Production(StockController):
 			if reading_required:
 				if not flt(min_val) <= flt(item.reading) <=  flt(max_val):
 					frappe.throw("<b>{0}</b> reading should be between {1} and {2} for {3} for Adhoc Production".format(par, frappe.bold(min_val), frappe.bold(max_val), frappe.bold(item.item_code)))
-			else:
+			elif not item.reading:
 				item.reading = 0
 			
 			in_inches = 0
@@ -69,6 +143,20 @@ class Production(StockController):
 				in_inches += cint(f[1])
 			item.reading_inches = in_inches
 
+			""" ++++++++++ Ver 1.0.190401 Begins ++++++++++ """
+                        # Following code added by SHIV on 2019/04/01
+                        item.business_activity = self.business_activity
+			item.cost_center = self.cost_center
+                        item.warehouse = self.warehouse
+                        item.expense_account = get_expense_account(self.company, item.item_code)
+                        """ ++++++++++ Ver 1.0.190401 Ends ++++++++++++ """
+
+			############# Change applied by Thukten on reading  ########
+				
+		self.total_raw_material_qty = total_raw_material_qty
+                self.total_production_qty = total_production_qty
+
+			######### End Changes ###########
 	def check_cop(self):
 		for a in self.items:
 			branch = frappe.db.sql("select 1 from `tabCOP Branch` where parent = %s and branch = %s", (a.price_template, self.branch))
@@ -85,21 +173,79 @@ class Production(StockController):
 	def before_submit(self):
 		self.assign_default_dummy()
 		self.check_cop()
+		if not self.items:
+			frappe.throw("Product Item is mandatory to submit the production")
 
 	def on_submit(self):
-		self.make_products_sl_entry()
-		self.make_products_gl_entry()
-		self.make_raw_material_stock_ledger()
-		self.make_raw_material_gl_entry()
+		if self.raw_materials:
+			self.update_lot_list(action="submit")
+
+		""" ++++++++++ Ver 1.0.190401 Begins ++++++++++ """
+                # Following lines commented by SHIV on 2019/04/01
+		#self.make_products_sl_entry()
+		#self.make_products_gl_entry()
+		#self.make_raw_material_stock_ledger()
+		#self.make_raw_material_gl_entry()
+
+		if not self.items:
+			frappe.throw("There should be atleast one Product Item")
+
+                # Following lines added by SHIV on 2019/04/01
+                self.update_stock_ledger()
+                self.make_gl_entries()
+                """ ++++++++++ Ver 1.0.190401 Ends ++++++++++++ """
 		self.make_production_entry()
 
 	def on_cancel(self):
 		self.assign_default_dummy()
-		self.make_products_sl_entry()
-		self.make_products_gl_entry()
-		self.make_raw_material_stock_ledger()
-		self.make_raw_material_gl_entry()
+		if self.raw_materials:
+			self.update_lot_list(action="cancel")
+
+		""" ++++++++++ Ver 1.0.190401 Begins ++++++++++ """
+                # Following lines commented by SHIV on 2019/04/01
+		#self.make_products_sl_entry()
+		#self.make_products_gl_entry()
+		#self.make_raw_material_stock_ledger()
+		#self.make_raw_material_gl_entry()
+
+                # Following lines added by SHIV on 2019/04/01
+		self.update_stock_ledger()
+		self.make_gl_entries_on_cancel()
+		""" ++++++++++ Ver 1.0.190401 Ends ++++++++++++ """
 		self.delete_production_entry()
+
+        """ ++++++++++ Ver 1.0.190401 Begins ++++++++++ """
+        # update_stock_ledger() method added by SHIV on 2019/04/01
+        def update_stock_ledger(self):
+                sl_entries = []
+
+                # make sl entries for source warehouse first, then do the target warehouse
+                for d in self.get('raw_materials'):
+                        if cstr(d.warehouse):
+                                sl_entries.append(self.get_sl_entries(d, {
+                                        "warehouse": cstr(d.warehouse),
+                                        "actual_qty": -1 * flt(d.qty),
+                                        "incoming_rate": 0
+                                }))
+                                
+                for d in self.get('items'):
+                        if cstr(d.warehouse):
+                                sl_entries.append(self.get_sl_entries(d, {
+                                        "warehouse": cstr(d.warehouse),
+                                        "actual_qty": flt(d.qty),
+                                        "incoming_rate": flt(d.cop, 2)
+                                }))
+
+                if self.docstatus == 2:
+                        sl_entries.reverse()
+
+                self.make_sl_entries(sl_entries, self.amended_from and 'Yes' or 'No')
+
+        # get_gl_entries() method added by SHIV on 2019/04/01
+        def get_gl_entries(self, warehouse_account):
+                gl_entries = super(Production, self).get_gl_entries(warehouse_account)
+                return gl_entries
+        """ ++++++++++ Ver 1.0.190401 Ends ++++++++++++ """
 
 	def assign_default_dummy(self):
 		self.pol_type = None
@@ -243,6 +389,8 @@ class Production(StockController):
 			doc.production_type = self.production_type
 			doc.adhoc_production = self.adhoc_production
 			doc.timber_species = a.timber_species
+			doc.cable_line_no = self.cable_line_no
+			doc.production_area = self.production_area
 			if a.timber_species:
 				doc.timber_class, doc.timber_type = frappe.db.get_value("Timber Species", a.timber_species, ["timber_class", "timber_type"])
 			doc.submit()
@@ -250,6 +398,9 @@ class Production(StockController):
 	def delete_production_entry(self):
 		frappe.db.sql("delete from `tabProduction Entry` where ref_doc = %s", self.name)
 
-
-
-
+@frappe.whitelist()
+def get_expense_account(company, item):
+        expense_account = frappe.db.get_value("Production Account Settings", {"company": company}, "default_production_account")
+        if not expense_account:
+                expense_account = frappe.db.get_value("Item", item, "expense_account")
+        return expense_account

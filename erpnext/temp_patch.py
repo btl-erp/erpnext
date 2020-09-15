@@ -9,6 +9,342 @@ from erpnext.hr.hr_custom_functions import get_month_details, get_salary_tax
 import collections
 from frappe.model.naming import make_autoname
 
+# Created by SHIV on 2019/12/12
+def refresh_salary_structures(debug=1):
+        counter = 0
+        for i in frappe.db.get_all("Salary Structure", "name", {"is_active": "Yes"}):
+                counter += 1
+                print counter, i.name
+                if not debug:
+                        doc = frappe.get_doc("Salary Structure", i.name)
+                        doc.save()
+        
+def update_new_payscale_arrears(debug=1):
+        counter = 0
+        for i in frappe.db.sql("""
+                        select sst.name, sr.new_basic, sr.basic_arrears, sr.salary_arrears
+                        from
+                                `tabSalary Structure` sst,
+                                maintenance.salary_revision2019 sr
+                        where sst.is_active = 'Yes'
+                        and sst.from_date = '2019-12-01'
+                        and sr.employee = sst.employee
+                        and (ifnull(sr.basic_arrears,0) > 0 or ifnull(sr.salary_arrears,0))
+                """, as_dict=True):
+                counter += 1
+                print counter, i
+                if not debug:
+                        print 'updating....'
+                        doc = frappe.get_doc("Salary Structure", i.name)
+                        if flt(i.basic_arrears):
+                                row = doc.append("earnings", {})
+                                row.salary_component = "Basic Pay Arrears"
+                                row.amount          = flt(i.basic_arrears)
+                                row.from_date        = "2019-12-01"
+                                row.to_date          = "2019-12-31"
+                                row.save(ignore_permissions=True)
+                        if flt(i.salary_arrears):
+                                row = doc.append("earnings", {})
+                                row.salary_component = "Salary Arrears"
+                                row.amount          = flt(i.salary_arrears)
+                                row.from_date        = "2019-12-01"
+                                row.to_date          = "2019-12-31"
+                                row.save(ignore_permissions=True)                                
+                        doc.save()
+                        
+def update_new_payscale_basic(debug=1):
+        counter = 0
+        for i in frappe.db.sql("""
+                        select sst.name, sr.new_basic, sr.basic_arrears, sr.salary_arrears
+                        from
+                                `tabSalary Structure` sst,
+                                maintenance.salary_revision2019 sr
+                        where sst.is_active = 'Yes'
+                        and sst.from_date = '2019-12-01'
+                        and sr.employee = sst.employee
+                """, as_dict=True):
+                counter += 1
+                print counter, i
+                if not debug:
+                        print 'updating....'
+                        if not frappe.db.exists("Salary Detail", {"parent": i.name, "salary_component": "Basic Pay"}):
+                                frappe.throw(_("Basic Pay component not found"))
+                        #basic = frappe.get_doc("Salary Detail", {"parent": i.name, "salary_component": "Basic Pay"})
+                        #basic.db_set("amount",i.new_basic)
+                        doc = frappe.get_doc("Salary Structure", i.name)
+                        for j in doc.get('earnings'):
+                                if j.salary_component == "Basic Pay":
+                                        j.amount = i.new_basic
+                                        break
+                        doc.save()
+        
+def update_new_payscale_master(debug=1):
+        counter = 0
+        for i in frappe.db.get_all("Salary Structure", "name", {"is_active": "Yes", "from_date": "2019-12-01"}):
+                counter += 1
+                print counter, i
+                if not debug:
+                        doc = frappe.get_doc("Salary Structure", i.name)
+                        doc.ca = 20 if flt(doc.ca) == 23 else doc.ca
+                        doc.eligible_for_psa = 0
+                        doc.psa = 0
+                        doc.save()
+                
+def create_new_salary_structures(debug=1):
+        def duplicate_structure(old_sst):
+                old = frappe.get_doc("Salary Structure", old_sst)
+                old.is_active   = 'No'
+                old.to_date     = '2019-11-30'
+                old.save(ignore_permissions=True)
+                print 'update old_structure'
+                new = {
+                        "doctype": "Salary Structure",
+                        "employee": old.employee,
+                        "is_active": "Yes",
+                        "from_date": "2019-12-01",
+                        "eligible_for_corporate_allowance": old.eligible_for_corporate_allowance,
+                        "ca_method": old.ca_method,
+                        "ca": old.ca,
+                        "eligible_for_contract_allowance": old.eligible_for_contract_allowance,
+                        "contract_allowance_method": old.contract_allowance_method,
+                        "contract_allowance": old.contract_allowance,
+                        "eligible_for_communication_allowance": old.eligible_for_communication_allowance,
+                        "communication_allowance_method": old.communication_allowance_method,
+                        "communication_allowance": old.communication_allowance,
+                        "eligible_for_fuel_allowances": old.eligible_for_fuel_allowances,
+                        "fuel_allowances_method": old.fuel_allowances_method,
+                        "fuel_allowances": old.fuel_allowances,
+                        "eligible_for_shift": old.eligible_for_shift,
+                        "shift_method": old.shift_method,
+                        "shift": old.shift,
+                        "eligible_for_difficulty": old.eligible_for_difficulty,
+                        "difficulty_method": old.difficulty_method,
+                        "difficulty": old.difficulty,
+                        "eligible_for_high_altitude": old.eligible_for_high_altitude,
+                        "high_altitude_method": old.high_altitude_method,
+                        "high_altitude": old.high_altitude,
+                        "eligible_for_psa": old.eligible_for_psa,
+                        "psa_method": old.psa_method,
+                        "psa": old.psa,
+                        "eligible_for_mpi": old.eligible_for_mpi,
+                        "mpi_method": old.mpi_method,
+                        "mpi": old.mpi,
+                        "eligible_for_deputation": old.eligible_for_deputation,
+                        "deputation_method": old.deputation_method,
+                        "deputation": old.deputation,
+                        "eligible_for_officiating_allowance": old.eligible_for_officiating_allowance,
+                        "officiating_allowance_method": old.officiating_allowance_method,
+                        "officiating_allowance": old.officiating_allowance,
+                        "eligible_for_temporary_transfer_allowance": old.eligible_for_temporary_transfer_allowance,
+                        "temporary_transfer_allowance_method": old.temporary_transfer_allowance_method,
+                        "temporary_transfer_allowance": old.temporary_transfer_allowance,
+                        "eligible_for_scarcity": old.eligible_for_scarcity,
+                        "scarcity_method": old.scarcity_method,
+                        "scarcity": old.scarcity,
+                        "eligible_for_cash_handling": old.eligible_for_cash_handling,
+                        "cash_handling_method": old.cash_handling_method,
+                        "cash_handling": old.cash_handling,
+                        "eligible_for_honorarium": old.eligible_for_honorarium,
+                        "honorarium_method": old.honorarium_method,
+                        "honorarium": old.honorarium,
+                        "eligible_for_pbva": old.eligible_for_pbva,
+                        "eligible_for_leave_encashment": old.eligible_for_leave_encashment,
+                        "eligible_for_ltc": old.eligible_for_ltc,
+                        "eligible_for_overtime_and_payment": old.eligible_for_overtime_and_payment,
+                        "eligible_for_sws": old.eligible_for_sws,
+                        "eligible_for_gis": old.eligible_for_gis,
+                        "eligible_for_pf": old.eligible_for_pf,
+                        "eligible_for_health_contribution": old.eligible_for_health_contribution,
+                        "eligible_for_bonus": old.eligible_for_annual_bonus,
+                }
+                # Earnings
+                earnings = []
+                for i in old.get("earnings"):
+                        earnings.append({
+                                "salary_component": i.salary_component,
+                                "amount": i.amount,
+                                "depends_on_lwp": i.depends_on_lwp,
+                                "from_date": i.from_date,
+                                "to_date": i.to_date,
+                                "institution_name": i.institution_name,
+                                "reference_type": i.reference_type,
+                                "reference_number": i.reference_number,
+                                "total_deductible_amount": i.total_deductible_amount,
+                                "total_deducted_amount": i.total_deducted_amount,
+                                "total_outstanding_amount": i.total_outstanding_amount,
+                                "salary_component_type": i.salary_component_type
+                        })
+
+                # Deductions
+                deductions = []
+                for i in old.get("deductions"):
+                        deductions.append({
+                                "salary_component": i.salary_component,
+                                "amount": i.amount,
+                                "depends_on_lwp": i.depends_on_lwp,
+                                "from_date": i.from_date,
+                                "to_date": i.to_date,
+                                "institution_name": i.institution_name,
+                                "reference_type": i.reference_type,
+                                "reference_number": i.reference_number,
+                                "total_deductible_amount": i.total_deductible_amount,
+                                "total_deducted_amount": i.total_deducted_amount,
+                                "total_outstanding_amount": i.total_outstanding_amount,
+                                "salary_component_type": i.salary_component_type
+                        })
+
+                new.update({"earnings": earnings})
+                new.update({"deductions": deductions})
+                frappe.get_doc(new).save(ignore_permissions=True)
+                return new
+        
+        counter = 0
+        for i in frappe.db.sql("""
+                        select ssb.name
+                        from
+                                maintenance.`tabSalary Structure_bkp20191212` ssb,
+                                `tabSalary Structure` sst
+                        where ssb.is_active='Yes'
+                        and sst.name = ssb.name
+                        and sst.is_active = ssb.is_active
+                """, as_dict=True):
+                counter += 1
+                print counter, i
+                if not debug:
+                        duplicate_structure(i.name)
+        
+# 2019/05/22 Birkha->Shiv
+def cancel_dn():
+	doc = frappe.get_doc("Delivery Note", "DN19043483")
+	doc.cancel()
+	print doc.name, doc.docstatus
+
+# 2019/04/01
+def update_production_sle():
+        counter = 0
+        for i in frappe.db.sql("select name from temp_pro order by name", as_dict=True):
+                counter += 1
+                print counter, i.name
+                voucher = frappe.db.sql("""
+                                        select *
+                                        from
+                                                (select 'APPI' as tbl, name, item_code, qty, idx
+                                                from `tabProduction Product Item`
+                                                where parent = '{0}' order by idx) x
+                                        union all
+                                        select *
+                                        from
+                                                (select 'BPMI' tbl, name, item_code, qty, idx
+                                                from `tabProduction Material Item`
+                                                where parent = '{0}' order by idx) y
+                                        order by tbl, idx
+                                """.format(i.name), as_dict=True)
+                sle = frappe.db.sql("select name, item_code, actual_qty from temp_sle where voucher_no = '{0}' order by name".format(i.name), as_dict=True)
+                
+                if len(voucher) == len(sle):
+                        for j in range(len(voucher)):
+                                if voucher[j].item_code == sle[j].item_code and abs(voucher[j].qty) == abs(sle[j].actual_qty):
+                                        print j, 'PROD', i.name, voucher[j].item_code, voucher[j].idx, voucher[j].tbl, voucher[j].name, voucher[j].qty, 'SLE', sle[j].name, sle[j].item_code, sle[j].idx, sle[j].actual_qty
+                                        frappe.db.sql("""
+                                                update `tabStock Ledger Entry`
+                                                set voucher_detail_no = '{0}'
+                                                where name = '{1}'
+                                        """.format(voucher[j].name, sle[j].name))                                     
+                                else:
+                                        frappe.throw(_("Values dont match"))
+                else:
+                        frappe.throw(_("Lengths dont match"))
+
+                if (counter%500) == 0: 
+                        frappe.db.commit()
+        frappe.db.commit()
+                
+def production_gl():
+	qry = """
+	select name
+	from `tabProduction` p
+	where p.docstatus = 1 
+	and not exists(select 1
+			from `tabGL Entry` g
+			where g.voucher_type = 'Production' 
+			and g.voucher_no = p.name)
+	order by name
+	"""
+	counter = 0
+	for i in frappe.db.sql(qry, as_dict=True):
+		counter += 1
+		print counter, i.name
+		doc = frappe.get_doc("Production", i.name)
+		doc.make_gl_entries(repost_future_gle=False)
+	frappe.db.commit()
+	
+# bench execute erpnext.temp_patch.cancel_ssl --args "'2020','01',"
+def cancel_ssl(pfiscal_year, pmonth):
+	counter = 0
+	for s in frappe.db.sql("select name from `tabSalary Slip` where fiscal_year='{0}' and month = '{1}' and docstatus=1".format(pfiscal_year, pmonth), as_dict=True):
+		counter += 1
+		print counter, s.name
+		doc = frappe.get_doc("Salary Slip", s.name)
+		doc.cancel()	
+	print "Total",counter
+
+def testmail():
+        # Test1, trying Delayed TRUE/FALSE
+        a = frappe.sendmail(recipients=['siva@bt.bt','sivasankar.k2003@gmail.com'],subject="Mail with Delayed TRUE",message="Delayed FALSE",delayed=True)
+        print a,'Delayed TRUE: Mail sent successfully...'
+        '''
+        a = frappe.sendmail(recipients=['siva@bt.bt'],subject="Mail with Delayed TRUE",message="Delayed FALSE",delayed=True)
+        print a,'Delayed TRUE: Mail sent successfully...'
+        b = frappe.sendmail(recipients=['siva@bt.bt'],subject="Mail with Delayed FALSE",message="Delayed FALSE",delayed=False)
+        print b,'Delayed FALSE: Mail sent successfully...'
+        '''
+        # Test2, trying bulk emails
+        '''
+        for i in range(50):
+                print i
+                frappe.sendmail(recipients=['siva@bt.bt'],subject="Mail with Delayed TRUE",message="Delayed TRUE")
+        '''
+
+        # Test3, trying with reference details
+        # This doesn't create communication
+        '''
+        frappe.sendmail(recipients=['siva@bt.bt'],
+                    subject='Mail with Delayed TRUE',
+                    message='Delayed TRUE',
+                    reference_doctype='Customers',
+                    reference_name='95591',
+                    communication='Email')
+        '''
+
+        # Test4, creating communication
+        '''
+        email.make(
+                doctype = 'Customers',
+                name = '95591',
+                content = 'Communication body',
+                subject = 'Communication subject',
+                recipients='siva@bt.bt',
+                communication_medium='Email',
+                send_email=True,
+                #send_me_a_copy=True, #Sends a copy to bia@bt.bt
+                print_html='<h1>Some more tests</h1>'   #Sends the print_html content as html attachment
+        )
+        '''
+
+# Shiv 2019/01/24, Due to wrong EL settings under employee group ESP, all ESP employees got
+# 30 days EL credited for the year 2019 
+def remove_el():
+	counter = 0
+	for el in frappe.db.sql("select * from `tabLeave Allocation` where leave_type = 'Earned Leave' and from_date = '2019-01-01' and to_date = '2019-12-31'", as_dict=True):
+		counter += 1
+		print el.employee, el.docstatus, el.leave_type, el.carry_forwarded_leaves, el.new_leaves_allocated, el.total_leaves_allocated
+		if el.docstatus == 1:
+			doc = frappe.get_doc("Leave Allocation", el.name)
+			doc.cancel()
+			print 'Cancelled successfully'
+		else:
+			print 'Unable to cancel. docstatus: {0}'.format(el.docstatus)
+
 def adjust_leave_encashment():
         les = frappe.db.sql("select name, encashed_days, employee from `tabLeave Encashment` where docstatus = 1 and application_date between %s and %s", ('2017-01-01', '2017-12-31'), as_dict=True)
         for le in les:

@@ -15,6 +15,7 @@ Version          Author          CreatedOn          ModifiedOn          Remarks
 
 from __future__ import unicode_literals
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe import msgprint
 from frappe.utils import flt, cint, nowdate, getdate, formatdate
@@ -139,7 +140,7 @@ def generate_receipt_no(doctype, docname, branch, fiscal_year):
 		abbr = frappe.db.get_value("Branch", branch, "abbr")
 		if not abbr:
 			frappe.throw("Set Branch Abbreviation in Branch Master Record")
-		name = str("CDCL/" + str(abbr) + "/" + str(fiscal_year) + "/")
+		name = str("NRDCL/" + str(abbr) + "/" + str(fiscal_year) + "/")
 		current = getseries(name, 4)
 		doc = frappe.get_doc(doctype, docname)
 		doc.db_set("money_receipt_no", current)
@@ -249,7 +250,7 @@ def get_branch_warehouse(branch):
 
 @frappe.whitelist()
 def get_branch_from_cost_center(cost_center):
-        return frappe.db.get_value("Branch", {"cost_center": cost_center}, "name")
+        return frappe.db.get_value("Branch", {"cost_center": cost_center, "is_disabled": 0}, "name")
 
 @frappe.whitelist()
 def kick_users():

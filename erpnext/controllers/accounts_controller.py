@@ -300,7 +300,7 @@ class AccountsController(TransactionBase):
 				"reference_row": d.reference_row,
 				"remarks": d.remarks,
 				"advance_amount": flt(d.amount),
-				"allocated_amount": flt(d.amount) if d.against_order else 0,
+				"allocated_amount": flt(self.grand_total) if d.against_order else 0,
 				"advance_account": d.advance_account,
 				"advance_cost_center": d.cost_center,
 				"advance_business_activity": d.business_activity
@@ -348,7 +348,7 @@ class AccountsController(TransactionBase):
 			advance_entries_against_si = [d.reference_name for d in self.get("advances")]
 			for d in advance_entries:
 				if not advance_entries_against_si or d.reference_name not in advance_entries_against_si:
-					frappe.msgprint(_("Payment Entry {0} is linked against Order {1}, check if it should be pulled as advance in this invoice.")
+					frappe.throw(_("Payment Entry {0} is linked against Order {1}, check if it should be pulled as advance in this invoice.")
 						.format(d.reference_name, d.against_order))
 
 	def update_against_document_in_jv(self):
@@ -489,6 +489,9 @@ class AccountsController(TransactionBase):
 				formatted_order_total = fmt_money(order_total, precision=self.precision("base_grand_total"),
 					currency=advance.account_currency)
 
+			#if self.doctype == "Sales Order":
+			#	order_total = round(order_total)
+			
 			if self.currency == self.company_currency and advance_paid > order_total:
 				frappe.throw(_("Total advance ({0}) against Order {1} cannot be greater than the Grand Total ({2})")
 					.format(formatted_advance_paid, self.name, formatted_order_total))

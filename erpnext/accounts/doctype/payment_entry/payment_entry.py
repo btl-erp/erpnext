@@ -82,6 +82,9 @@ class PaymentEntry(AccountsController):
 		self.update_advance_paid()
 		
 	def on_cancel(self):
+		if self.clearance_date:
+                        frappe.throw("Already done bank reconciliation.")
+
 		self.setup_party_account_field()
 		self.make_gl_entries(cancel=1)
 		self.update_advance_paid()
@@ -604,6 +607,7 @@ class PaymentEntry(AccountsController):
 		if self.payment_type in ("Receive", "Pay") and self.party:
 			for d in self.get("references"):
 				if d.allocated_amount and d.reference_doctype in ("Sales Order", "Purchase Order"):
+					#frappe.msgprint("the refernce docs {0} and {1} and {2}".format(d.allocated_amount, d.reference_doctype, d.reference_name))
 					frappe.get_doc(d.reference_doctype, d.reference_name).set_total_advance_paid()
 
 	def get_series(self):
@@ -715,7 +719,13 @@ def get_party_details(company, party_type, party, date):
 
 @frappe.whitelist()	
 def get_account_details(account, date):
-	frappe.has_permission('Payment Entry', throw=True)
+	''' Ver.3.0.191222 Begins, NRDCLCRM, CRMNRDCL, NRDCL CRM, CRM NRDCL '''
+	# following line commented by SHIV on 2019/12/22
+	#frappe.has_permission('Payment Entry', throw=True)
+	# following code added by SHIV on 2019/12/22
+	if "CRM Customer" not in frappe.get_roles():
+		frappe.has_permission('Payment Entry', throw=True)
+	''' Ver.3.0.19.12.22 Ends '''
 	return frappe._dict({
 		"account_currency": get_account_currency(account),
 		"account_balance": get_balance_on(account, date),
@@ -844,6 +854,9 @@ def get_payment_entry(dt, dn, party_amount=None, bank_account=None, bank_amount=
 	if dt == "Sales Invoice":
                 bank_acc = frappe.db.get_value("Branch", doc.branch, "revenue_bank_account")
 		ba = doc.business_activity
+	elif dt == "Sales Order":
+                bank_acc = frappe.db.get_value("Branch", doc.branch, "revenue_bank_account")
+		ba = get_default_ba()
         elif dt == "Purchase Invoice":
                 bank_acc = frappe.db.get_value("Branch", doc.branch, "expense_bank_account")
 		ba = doc.business_activity
@@ -869,6 +882,9 @@ def get_payment_entry(dt, dn, party_amount=None, bank_account=None, bank_amount=
 	pe.branch = doc.branch	
 	pe.business_activity = ba
 	pe.pl_cost_center = cc
+
+	if dt == "Sales Order" or dt == "Purchase Order":
+		pe.so_reference = doc.name
 
         # Ver 2.0 Begins, Following code added SHIV on 03/01/2018
         if party_currency and bank.account_currency:

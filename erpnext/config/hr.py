@@ -157,6 +157,16 @@ def get_data():
 					"name": "Leave Adjustment",
 					"label": _("Leave Adjustment Tool"),
 				},
+                                {
+					"type": "doctype",
+					"name": "Request EL Allocation",
+					"label": _("Request EL Allocation"),
+				},
+				{
+                                        "type": "doctype",
+                                        "name": "Carry Forward Entry",
+                                        "label": _("Carry Forward CL"),
+                                }
 			]
 		},
 		{
@@ -255,6 +265,19 @@ def get_data():
 					"name": "Employee Benefits",
                                         "label": _("Process Employee Benefits"),
 				},
+                                {
+					"type": "doctype",
+					"name": "Other Contribution",
+                                        "label": _("Other Contribution"),
+					"description": _("Other Contribution"),
+				},
+                                {
+					"type": "doctype",
+					"name": "Hall Booking",
+                                        "label": _("Hall Booking Invoice"),
+					"description": _("Hall Booking"),
+				},
+				
 			]
 		},
 		{
@@ -451,35 +474,57 @@ def get_data():
 				},
 				{
 					"type": "report",
+					"name": "DES Employee Report",
+					"doctype": "DES Employee"
+				},
+				{
+					"type": "report",
 					"is_query_report": True,
 					"name": "Monthly Attendance Sheet",
 					"doctype": "Attendance"
 				},
-                                {
+                		{
 					"type": "report",
 					"is_query_report": True,
 					"name": "Salary Tax Report",
-                                        "label": "RRCO Tax Slab Details",
+                    			"label": "RRCO Tax Slab Details",
 					"doctype": "Salary Tax"
 				},
-                                {
+                		{
 					"type": "report",
 					"is_query_report": True,
 					"name": "Employee Due Date Report",
 					"doctype": "Employee"
 				},
 				{
-                                        "type": "report",
-                                        "name": "LTC Details",
-                                        "doctype": "Leave Travel Concession"
-                                },
+				    "type": "report",
+				    "name": "LTC Details",
+				    "doctype": "Leave Travel Concession"
+				},
+						{
+				    "type": "report",
+				    "is_query_report": True,
+				    "name": "Travel Report",
+				    "doctype": "Travel Claim"
+						},
+						{
+				    "type": "report",
+							"is_query_report": True,
+				    "name": "Hall Booking Report",
+				    "doctype": "Hall Booking"
+				},
+				{
+					"type": "report",
+					"is_query_report": True,
+					"name": "Over Time Report",
+					"doctype": "Overtime Application List"
+				},
 				{
                                         "type": "report",
                                         "is_query_report": True,
-                                        "name": "Travel Report",
-                                        "doctype": "Travel Claim"
+                                        "name": "Salary Advance Report",
+                                        "doctype": "Salary Advance"
                                 },
-
 			]
 		},
 	]
