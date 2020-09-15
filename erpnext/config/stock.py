@@ -4,7 +4,7 @@ from frappe import _
 def get_data():
 	return [
 		{
-			"label": _("Stock Transactions"),
+			"label": _("Transactions"),
 			"items": [
 				{
 					"type": "doctype",
@@ -21,20 +21,20 @@ def get_data():
 					"name": "Delivery Note",
 					"description": _("Shipments to customers."),
 				},
+                                {
+					"type": "doctype",
+					"name": "Purchase Order",
+					"description": _("Purchase Order"),
+				},
 				{
 					"type": "doctype",
 					"name": "Purchase Receipt",
 					"description": _("Goods received from Suppliers."),
 				},
-				{
-					"type": "doctype",
-					"name": "Mining Process",
-					"description": _("Capturing the expenses task related to Mines"),
-				},
 			]
 		},
 		{
-			"label": _("Stock Master"),
+			"label": _("Master Data"),
 			"items": [
 				{
 					"type": "doctype",
@@ -57,6 +57,18 @@ def get_data():
 				},
 				{
 					"type": "doctype",
+					"name": "Item Sub Group",
+					"label": _("Material Sub Group"),
+					"description": _("Item Sub Groups."),
+				},
+				{
+                                        "type": "doctype",
+                                        "name": "Item Sub Group Type",
+                                        "label": _("Material Sub Group Type"),
+                                        "description": _("Item Sub Groups Type."),
+                                },
+				{
+					"type": "doctype",
 					"name": "Item Price",
 					"label": _("Material Price"),
 					"description": _("Multiple Item prices."),
@@ -64,13 +76,8 @@ def get_data():
 				},
 				{
 					"type": "doctype",
-					"name": "Stock Price Template",
-					"label": "Price Templates for Mines Products",
-					"description": _("Price Templates for Mines Products"),
-				},
-				{
-					"type": "doctype",
 					"name": "Warehouse",
+					"route": "Tree/Warehouse",
 					"description": _("Where items are stored."),
 				},
 				{
@@ -87,14 +94,61 @@ def get_data():
 			]
 		},
 		{
-			"label": _("Stock Reports"),
+			"label": _("Tools"),
+			"icon": "icon-wrench",
 			"items": [
+				{
+					"type": "doctype",
+					"name": "Stock Reconciliation",
+					"description": _("Upload stock balance via csv.")
+				},
+				{
+					"type": "page",
+					"name": "stock-analytics",
+					"label": "Stock Analytics"
+				},
+				{
+                                        "type": "doctype",
+                                        "name": "Item Register Tool",
+                                        "label": "Item Register Tool"
+                                },
+			]
+		},
+                {
+			"label": _("POL Transaction"),
+			"icon": "icon-star",
+			"items": [
+				{
+					"type": "doctype",
+					"name": "POL",
+					"label": "Receive POL",
+					"description": _("Receive POL"),
+				},
+			]
+		},
+                {
+			"label": _("Reports"),
+			"items": [
+                                {
+					"type": "report",
+					"is_query_report": True,
+					"name": "Items Register Ledger",
+					"doctype": "Consumable Register Entry",
+					"Label": _("Items Register Ledger")
+				},
 				{
 					"type": "report",
 					"is_query_report": True,
 					"name": "Stock Ledger Report",
 					"doctype": "Stock Ledger Entry",
 					"Label": _("Stock Ledger")
+				},
+                                {
+					"type": "report",
+					"is_query_report": True,
+					"name": "Stock Issue Report",
+					"doctype": "Stock Entry",
+					"Label": _("Stock Issue Report")
 				},
 				{
 					"type": "report",
@@ -115,12 +169,6 @@ def get_data():
 					"name": "Stock Ageing Report",
 					"doctype": "Item",
 					"label": _("Stock Ageing")
-				},
-				{
-					"type": "report",
-					"is_query_report": True,
-					"name": "Material Balance History",
-					"doctype": "Batch"
 				},
 				{
 					"type": "report",
@@ -146,18 +194,13 @@ def get_data():
 					"is_query_report": True,
 					"name": "Materialwise Recommended Reorder Level Report",
 					"doctype": "Item",
-				}
+				},
+				  {
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "Goods Return and Rejected Report",
+                                        "doctype": "Purchase Receipt",
+                                }
 			]
 		},
-		{
-			"label": _("Stock Tools"),
-			"icon": "icon-wrench",
-			"items": [
-				{
-					"type": "doctype",
-					"name": "Stock Reconciliation",
-					"description": _("Upload stock balance via csv.")
-				}
-			]
-		}
 	]

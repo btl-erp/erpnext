@@ -17,9 +17,7 @@ exclude_from_linked_with = True
 class GLEntry(Document):
 	def validate(self):
 		self.flags.ignore_submit_comment = True
-		#avoid party check for salary
-		if self.party_check:
-			self.check_mandatory()
+		self.check_mandatory()
 		self.pl_must_have_cost_center()
 		self.check_pl_account()
 		self.validate_cost_center()
@@ -40,14 +38,15 @@ class GLEntry(Document):
 					self.against_voucher)
 
 	def check_mandatory(self):
-		mandatory = ['account','voucher_type','voucher_no','company']
+		mandatory = ['account','voucher_type','voucher_no','company', 'cost_center', 'business_activity']
 		for k in mandatory:
 			if not self.get(k):
 				frappe.throw(_("{0} is required").format(_(self.meta.get_label(k))))
 
 		account_type = frappe.db.get_value("Account", self.account, "account_type")
 		if account_type in ["Receivable", "Payable"] and not (self.party_type and self.party):
-			frappe.throw(_("Party Type and Party is required for Receivable / Payable account {0}").format(self.account))
+			if self.party_check:
+				frappe.throw(_("Party Type and Party is required for Receivable / Payable account {0}").format(self.account))
 
 		# Zero value transaction is not allowed
 		if not (flt(self.debit) or flt(self.credit)):
@@ -145,6 +144,16 @@ def check_freezing_date(posting_date, adv_adj=False):
 					and not frozen_accounts_modifier in frappe.get_roles():
 				frappe.throw(_("You are not authorized to add or update entries before {0}").format(formatdate(acc_frozen_upto)))
 
+		acc_froze_monthly = frappe.db.get_value("Accounts Settings", None, "froze_acc_monthly")
+                if acc_froze_monthly:
+                        frozen_accounts_modifier = frappe.db.get_value("Accounts Settings", None, "frozen_accounts_modifier")
+                        if getdate(posting_date).month != getdate(frappe.utils.nowdate()).month  \
+					and getdate(posting_date).year == getdate(frappe.utils.nowdate()).year \
+                                        and not frozen_accounts_modifier in frappe.get_roles():
+                                frappe.throw(("You are not authorized to add or update entries for date: <b>  {0} </b> month is already closed").format(getdate(posting_date)))
+
+	
+	
 def update_outstanding_amt(account, party_type, party, against_voucher_type, against_voucher, on_cancel=False):
 	if party_type and party:
 		party_condition = " and party_type='{0}' and party='{1}'"\

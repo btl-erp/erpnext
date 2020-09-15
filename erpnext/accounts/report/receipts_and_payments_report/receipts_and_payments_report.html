@@ -1,0 +1,72 @@
+
+
+<h2 class="text-center">Gelephu Thromde.</h2>
+<h4 class="text-center">Receipts & Payments Statements</h4>
+{% if (filters.from_date) { %}
+	<h4 class="text-center">{%= dateutil.str_to_user(filters.from_date) %} - {%= dateutil.str_to_user(filters.to_date) %}</h3>
+{% } %}
+{% if (filters.cost_center) { %}
+	<h5 class="text-center">Cost Center: {%= filters.cost_center %}</h5>
+{% } %}
+<hr>
+<table class="table table-bordered" style="font-size: 8pt; padding: 0; word-wrap:normal; width: 100%; empty-cells: hide;">
+	<thead>
+		<tr>
+			<th></th>
+			{% for(var i=2, l=report.columns.length; i<l; i++) { %}
+				{% if (report.columns[i].label != "Opening (Cr)" && report.columns[i].label != "Closing (Cr)" && report.columns[i].label != "Opening (Dr)" && report.columns[i].label != "Closing (Dr)") { %}
+					{% if(report.columns[i].label != "Credit" && report.columns[i].label != "Debit") { %}
+						<th class="text-right" style="font-size:8pt;">{%= report.columns[i].label %}</th>
+					{% } %}
+					{% if(report.columns[i].label == "Credit") { %}
+						<th class="text-right" style="font-size:8pt;">Receipts</th>
+					{% } %}
+					{% if(report.columns[i].label == "Debit") { %}
+					<th class="text-right" style="font-size:8pt;">Payments</th>
+				{% } %}
+				{% } %}
+			{% } %}
+		</tr>
+	</thead>
+	<tbody>
+		{% for(var j=0, k=data.length; j<k; j++) { %}
+			{%
+				var row = data[j];
+				var row_class = data[j].parent_account ? "" : "financial-statements-important";
+				row_class += data[j].account_name ? "" : " financial-statements-blank-row";
+			%}
+			<tr class="{%= row_class %}">
+				{% if (row.account_name != "Receipts" && row.account_name != "Payments") { %}
+				<td>
+					<span style="padding-left: {%= cint(data[j].indent) * 2 %}em">{%= row.account_name %}</span>
+				</td>
+				{% } %}
+				{% for(var i=2, l=report.columns.length; i<l; i++) { %}
+				{% if (report.columns[i].label != "Opening (Cr)" && report.columns[i].label != "Closing (Cr)" && report.columns[i].label != "Opening (Dr)" && report.columns[i].label != "Closing (Dr)" && row.account_name != "Receipts" && row.account_name != "Payments") { %}
+					<td class="text-right">
+						{% var fieldname = report.columns[i].field; %}
+						{% if (!is_null(row[fieldname])) { %}
+							{% if (fieldname == "account_code") { %}
+								{%= row[fieldname] %}
+							{% } %}
+							{% if (fieldname != "account_code") { %}
+								{%= format_currency(row[fieldname], row.currency) %}
+							{% } %}
+						{% } %}
+					</td>
+				{% } %}
+				{% } %}
+			</tr>
+		{% } %}
+	</tbody>
+</table>
+<br>
+<br>
+<table class="table table-borderless">
+<tr>
+	<td>(Signature)<br>Head of Finance Section</td>
+	<td>(Signature)<br>Head of Office</td>
+</tr>
+</table>
+<p class="text-right text-muted">Printed On {%= dateutil.str_to_user(dateutil.get_datetime_as_string()) %}</p>
+

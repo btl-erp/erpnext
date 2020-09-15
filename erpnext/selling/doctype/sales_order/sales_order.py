@@ -13,8 +13,7 @@ from frappe.desk.notifications import clear_doctype_notifications
 from erpnext.controllers.recurring_document import month_map, get_next_date
 
 from erpnext.controllers.selling_controller import SellingController
-from frappe.model.naming import make_autoname
-from erpnext.custom_autoname import get_auto_name
+from erpnext.custom_utils import check_uncancelled_linked_doc, check_future_date, get_settings_value
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
@@ -25,12 +24,14 @@ class WarehouseRequired(frappe.ValidationError): pass
 class SalesOrder(SellingController):
 	def __init__(self, arg1, arg2=None):
 		super(SalesOrder, self).__init__(arg1, arg2)
-	
-	def autoname(self):
-		self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
 
+	def before_save(self):
+		self.get_selling_rate()
+	
 	def validate(self):
+		check_future_date(self.transaction_date)
 		super(SalesOrder, self).validate()
+		self.calculate_transportation()
 
 		self.validate_order_type()
 		self.validate_delivery_date()
@@ -41,7 +42,7 @@ class SalesOrder(SellingController):
 		self.validate_for_items()
 		self.validate_warehouse()
 		self.validate_drop_ship()
-
+	
 		from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 		make_packing_list(self)
 
@@ -50,6 +51,15 @@ class SalesOrder(SellingController):
 
 		if not self.billing_status: self.billing_status = 'Not Billed'
 		if not self.delivery_status: self.delivery_status = 'Not Delivered'
+
+	def calculate_transportation(self):
+		total_qty = 0
+		for a in self.items:
+			total_qty += flt(a.qty)
+
+		self.total_quantity = total_qty
+		self.transportation_charges = round(flt(self.total_quantity) * flt(self.total_distance) * flt(self.transportation_rate), 2)
+		self.discount_amount = flt(self.discount_or_cost_amount) - flt(self.transportation_charges) - flt(self.loading_cost) - flt(self.additional_cost)
 
 	def validate_mandatory(self):
 		# validate transaction date v/s delivery date
@@ -164,11 +174,18 @@ class SalesOrder(SellingController):
 		frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype, self.company, self.base_grand_total, self)
 
 		self.update_prevdoc_status('submit')
+		self.update_product_requisition(action="Submit")
+
+	def check_transporter_amount(self):
+		trans_amount = round(flt(self.total_quantity) * flt(self.total_distance) * flt(self.transportation_rate), 2)
+		if flt(self.transportation_charges) != flt(trans_amount):
+			frappe.throw("The transportation charges is calculated wrongly. Please save again")
 
 	def on_cancel(self):
 		# Cannot cancel closed SO
 		if self.status == 'Closed':
 			frappe.throw(_("Closed order cannot be cancelled. Unclose to cancel."))
+		check_uncancelled_linked_doc(self.doctype, self.name)
 
 		self.check_nextdoc_docstatus()
 		self.update_reserved_qty()
@@ -176,6 +193,7 @@ class SalesOrder(SellingController):
 		self.update_prevdoc_status('cancel')
 
 		frappe.db.set(self, 'status', 'Cancelled')
+		self.update_product_requisition(action = 'Cancell')
 
 	def check_credit_limit(self):
 		from erpnext.selling.doctype.customer.customer import check_credit_limit
@@ -254,9 +272,24 @@ class SalesOrder(SellingController):
 	def on_update(self):
 		pass
 
+	def before_submit(self):
+		self.check_transporter_amount()
+		self.get_selling_rate()
+
 	def before_update_after_submit(self):
 		self.validate_drop_ship()
 		self.validate_supplier_after_submit()
+		#self.get_selling_rate()
+
+	def update_product_requisition(self, action):
+		if action == 'Cancell':
+			ref_doc = ''
+		else:
+			ref_doc = self.name
+		
+		if self.po_no:
+			doc = frappe.get_doc("Product Requisition", self.po_no)
+			doc.db_set("so_reference", ref_doc)
 
 	def validate_supplier_after_submit(self):
 		"""Check that supplier is the same after submit if PO is already made"""
@@ -314,6 +347,33 @@ class SalesOrder(SellingController):
 		self.set("delivery_date", get_next_date(reference_doc.delivery_date, mcount,
 						cint(reference_doc.repeat_on_day_of_month)))
 
+	def get_selling_rate(self):
+		for item in self.items:
+			item_sub_group = None
+			if not self.branch or not item.item_code or not self.transaction_date:
+				frappe.throw("Select Item Code or Branch or Posting Date")
+			rate=""
+			if self.location:
+				rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}' and location = '{2}'""".format(item.price_template, item.item_code, self.location), as_dict =1)
+			if not rate:
+				rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}'""".format(item.price_template, item.item_code), as_dict =1)
+			if not rate:
+				species,item_sub_group = frappe.db.get_value("Item", item.item_code, ["species","item_sub_group"])
+				if species:
+					timber_class, timber_type = frappe.db.get_value("Timber Species", species, ["timber_class", "timber_type"])
+					if self.location:
+						rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}' and timber_type = '{2}' and item_sub_group='{3}' and location = '{4}'""".format(item.price_template, timber_class, timber_type,item_sub_group, self.location), as_dict =1)
+					if not rate:
+						rate = frappe.db.sql(""" select selling_price as rate from `tabSelling Price Rate` where parent = '{0}' and particular = '{1}' and timber_type = '{2}' and item_sub_group='{3}'""".format(item.price_template, timber_class, timber_type,item_sub_group), as_dict =1)
+
+			rate = rate and rate[0].rate or 0.0
+			if item.rate != rate:
+				frappe.throw("Selling Rate had changed since you last pulled. Please pull again")
+			if item.rate <= 0.0 or item.amount <= 0.0:
+				frappe.throw("Rate and Amount must be greater than 0")
+
+		
+
 def get_list_context(context=None):
 	from erpnext.controllers.website_list_for_contact import get_list_context
 	list_context = get_list_context(context)
@@ -355,6 +415,9 @@ def make_material_request(source_name, target_doc=None):
 	doc = get_mapped_doc("Sales Order", source_name, {
 		"Sales Order": {
 			"doctype": "Material Request",
+			"field_map": {
+				"naming_series": "naming_series",
+			},
 			"validation": {
 				"docstatus": ["=", 1]
 			}
@@ -399,13 +462,19 @@ def make_delivery_note(source_name, target_doc=None):
 		target.base_amount = (flt(source.qty) - flt(source.delivered_qty)) * flt(source.base_rate)
 		target.amount = (flt(source.qty) - flt(source.delivered_qty)) * flt(source.rate)
 		target.qty = flt(source.qty) - flt(source.delivered_qty)
-		expense_account = frappe.db.get_value("Item", source.item_code, "expense_account")
-                if expense_account:
-                        target.expense_account = expense_account
+		expense_account,is_prod = frappe.db.get_value("Item", source.item_code, ["expense_account", "is_production_item"])
+		if is_prod:
+			expense_account = get_settings_value("Production Account Settings", source_parent.company, "default_production_account")
+			if not expense_account:
+				frappe.throw("Setup Default Production Account in Production Account Settings")
+		target.expense_account = expense_account
 
 	target_doc = get_mapped_doc("Sales Order", source_name, {
 		"Sales Order": {
 			"doctype": "Delivery Note",
+			"field_map": {
+				"naming_series": "naming_series",
+			},
 			"validation": {
 				"docstatus": ["=", 1]
 			}
@@ -454,6 +523,9 @@ def make_sales_invoice(source_name, target_doc=None, ignore_permissions=False):
 	doclist = get_mapped_doc("Sales Order", source_name, {
 		"Sales Order": {
 			"doctype": "Sales Invoice",
+			"field_map": {
+				"naming_series": "naming_series",
+			},
 			"field_map": {
 				"party_account_currency": "party_account_currency"
 			},

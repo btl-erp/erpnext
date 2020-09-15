@@ -14,8 +14,53 @@ frappe.ui.form.on("Purchase Order", {
 		frm.set_indicator_formatter('item_code',
 			function(doc) { return (doc.qty<=doc.received_qty) ? "green" : "orange" })
 
+		//set default price list
+		frm.set_value("buying_price_list", "Standard Buying")
+
+		if(frm.doc.__islocal && !frm.doc.branch) {
+                        frappe.call({
+                              method: "erpnext.custom_utils.get_user_info",
+                              args: {"user": frappe.session.user},
+                              callback(r) {
+                                        cur_frm.set_value("branch", r.message.branch);
+                             }
+                        });
+                }
+	},
+
+	freight_and_insurance_charges: function(frm) {
+		calculate_discount(frm)
+	},
+
+	discount: function(frm) {
+		calculate_discount(frm)
+	},
+
+	other_charges: function(frm) {
+		calculate_discount(frm)
+	},
+
+	tax: function(frm) {
+		calculate_discount(frm)
+	},
+
+	annual_tender: function(frm) {
+		cur_frm.set_df_property("buying_price_list", "read_only", frm.doc.annual_tender != 1)
+		if(frm.doc.annual_tender == 1) {
+			frm.set_value("buying_price_list", "")
+		}
+		else {
+			frm.set_value("buying_price_list", "Standard Buying")
+		}
 	}
 });
+
+function calculate_discount(frm) {
+	cur_frm.set_value("total_add_ded", frm.doc.freight_and_insurance_charges + frm.doc.other_charges + frm.doc.tax - frm.doc.discount)
+	cur_frm.set_value("discount_amount", -frm.doc.freight_and_insurance_charges - frm.doc.other_charges - frm.doc.tax + frm.doc.discount)
+	cur_frm.refresh_field("discount_amount")
+	cur_frm.refresh_field("total_add_ded")
+}
 
 erpnext.buying.PurchaseOrderController = erpnext.buying.BuyingController.extend({
 	refresh: function(doc, cdt, cdn) {
@@ -62,6 +107,10 @@ erpnext.buying.PurchaseOrderController = erpnext.buying.BuyingController.extend(
 			if (this.frm.has_perm("submit")) {
 				cur_frm.add_custom_button(__('Re-open'), this.unclose_purchase_order, __("Status"));
 			}
+		}
+
+		if(flt(doc.per_billed)==0 && doc.status != "Delivered") {
+			cur_frm.add_custom_button(__('Payment'), cur_frm.cscript.make_payment_entry, __("Make"));
 		}
 
 		if(doc.docstatus == 1 && doc.status != "Closed") {
@@ -286,7 +335,55 @@ frappe.ui.form.on("Purchase Order Item", "item_code", function(frm, cdt, cdn) {
         callback: function(r)  {
              if(r.message) {
                    frappe.model.set_value(cdt, cdn, "budget_account", r.message)
+		   frappe.model.set_value(cdt, cdn, "uom", null)
              }
         }
    })
 })
+
+//cost Center
+cur_frm.fields_dict['items'].grid.get_field('cost_center').get_query = function(frm, cdt, cdn) {
+        var d = locals[cdt][cdn];
+        return {
+                query: "erpnext.controllers.queries.filter_branch_cost_center",
+                filters: {'branch': frm.branch}
+        }
+}
+
+
+frappe.ui.form.on("Purchase Order", "items_on_form_rendered", function(frm, grid_row, cdt, cdn) {
+                var row = cur_frm.open_grid_row();
+                frappe.call({
+                              method: "erpnext.custom_utils.get_user_info",
+                              args: {"user": frappe.session.user},
+                              callback(r) {
+                                if(!row.grid_form.fields_dict.cost_center.value) {
+                                        row.grid_form.fields_dict.cost_center.set_value(r.message.cost_center)
+                                        row.grid_form.fields_dict.cost_center.refresh()
+                                }
+                                if(!row.grid_form.fields_dict.warehouse.value) {
+                                        row.grid_form.fields_dict.warehouse.set_value(r.message.warehouse)
+                                        row.grid_form.fields_dict.warehouse.refresh()
+                                }
+                             }
+                        });
+        })
+
+cur_frm.fields_dict['items'].grid.get_field('uom').get_query = function(frm, cdt, cdn) {
+        var d = locals[cdt][cdn];
+        return {
+                query: "erpnext.controllers.queries.get_item_uom",
+                filters: {'item_code': d.item_code}
+        }
+}
+
+frappe.ui.form.on("Purchase Order","onload", function(frm, cdt, cdn) {
+        var df = frappe.meta.get_docfield("Purchase Order Item","budget_account", cur_frm.doc.name);
+        if(in_list(user_roles, "Purchase Master")) {
+                df.read_only = 0;
+        }
+        else {
+                df.read_only = 1;
+        }       
+}); 
+

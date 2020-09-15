@@ -2,6 +2,9 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('Leave Travel Concession', {
+	setup: function(frm) {
+		frm.get_docfield("items").allow_bulk_edit = 1;
+	},
 	refresh: function(frm) {
 		if(!frm.doc.posting_date) {
 			frm.set_value("posting_date", get_today())
@@ -20,7 +23,22 @@ frappe.ui.form.on('Leave Travel Concession', {
 		}
 	},
 	"get_ltc": function(frm) {
-		process_ltc(frm.doc.branch);
+		if(frm.doc.fiscal_year) {
+			//load_accounts(frm.doc.company)
+			return frappe.call({
+				method: "get_ltc_details",
+				doc: frm.doc,
+				callback: function(r, rt) {
+					frm.refresh_field("items");
+					frm.refresh_fields();
+				},
+				freeze: true,
+				freeze_message: "Loading Employee Details..... Please Wait"
+			});
+		}
+		else {
+			msgprint("Select Fiscal Year First")
+		}
 	}
 });
 
@@ -50,6 +68,9 @@ function process_ltc(branch) {
 				});
 
 				cur_frm.set_value("total_amount", total_amount)
+			}
+			else {
+				msgprint("No employee record found for the selected branch")
 			}
 		}
 	})

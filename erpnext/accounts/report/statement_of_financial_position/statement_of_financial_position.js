@@ -9,5 +9,18 @@ frappe.query_reports["Statement of Financial Position"]["filters"].push({
 	"label": __("Cost Center"),
 	"fieldtype": "Link",
 	"options": "Cost Center",
-   });
+	"get_query": function() {return {'filters': [['Cost Center', 'is_disabled', '!=', '1']]}}
+   },
+   {
+	"fieldname":"business_activity",
+	"label": __("Funding Pool"),
+	"fieldtype": "Link",
+	"options": "Business Activity",
+	},
+	{
+		"fieldname": "show_zero_values",
+		"label": __("Show zero values"),
+		"fieldtype": "Check"
+	},
+   );
 })

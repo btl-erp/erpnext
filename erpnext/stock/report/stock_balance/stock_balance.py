@@ -20,6 +20,7 @@ def execute(filters=None):
 		qty_dict = iwb_map[(company, item, warehouse)]
 		data.append([item, item_map[item]["item_name"],
 			item_map[item]["item_group"],
+			item_map[item]["item_sub_group"],
 			item_map[item]["brand"],
 			item_map[item]["description"], warehouse,
 			item_map[item]["stock_uom"], qty_dict.opening_qty,
@@ -39,6 +40,7 @@ def get_columns():
 		_("Item")+":Link/Item:100",
 		_("Item Name")+"::150",
 		_("Item Group")+"::100",
+		_("Item Sub Group")+"::100",
 		_("Brand")+"::90",
 		_("Description")+"::140",
 		_("Warehouse")+":Link/Warehouse:100",
@@ -69,6 +71,11 @@ def get_conditions(filters):
 
 	if filters.get("item_code"):
 		conditions += " and item_code = '%s'" % frappe.db.escape(filters.get("item_code"), percent=False)
+
+	if filters.get("cost_center"):
+		conditions += " and warehouse IN (select wh.name from `tabWarehouse` wh inner join `tabWarehouse Branch` wi on wh.name=wi.parent \
+		inner join `tabBranch` b on b.name=wi.branch inner join `tabCost Center` cc on b.cost_center = cc.name \
+		where cc.name = '%s' or cc.parent_cost_center = '%s')"%(filters.get("cost_center"), filters.get("cost_center"))
 
 	if filters.get("warehouse"):
 		warehouse_details = frappe.db.get_value("Warehouse", filters.get("warehouse"), ["lft", "rgt"], as_dict=1)
@@ -139,7 +146,7 @@ def get_item_details(filters):
 		condition = "where item_code=%s"
 		value = (filters["item_code"],)
 
-	items = frappe.db.sql("""select name, item_name, stock_uom, item_group, brand, description
+	items = frappe.db.sql("""select name, item_name, stock_uom, item_group, item_sub_group, brand, description
 		from tabItem {condition}""".format(condition=condition), value, as_dict=1)
 
 	return dict((d.name, d) for d in items)

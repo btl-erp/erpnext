@@ -43,10 +43,16 @@ frappe.query_reports["General Ledger"] = {
 			}
 		},
 		{
-			"fieldname":"voucher_no",
-			"label": __("Voucher No"),
-			"fieldtype": "Data",
+			"fieldname":"cost_center",
+			"label": __("Cost Center/Activity"),
+			"fieldtype": "Link",
+			"options": "Cost Center",
 		},
+		{
+                        "fieldname":"voucher_no",
+                        "label": __("Voucher Number"),
+                        "fieldtype": "Data",
+                },
 		{
 			"fieldtype": "Break",
 		},
@@ -54,7 +60,7 @@ frappe.query_reports["General Ledger"] = {
 			"fieldname":"party_type",
 			"label": __("Party Type"),
 			"fieldtype": "Select",
-			"options": ["", "Customer", "Supplier", "Employee"],
+			"options": ["", "Customer", "Supplier", "Employee", "Equipment"],
 			"default": ""
 		},
 		{
@@ -70,6 +76,13 @@ frappe.query_reports["General Ledger"] = {
 				return party_type;
 			}
 		},
+		 {
+                        "fieldname":"business_activity",
+                        "label": __("Funding Pool"),
+                        "fieldtype": "Link",
+                        "options": "Business Activity",
+                },
+
 		{
 			"fieldname":"group_by_voucher",
 			"label": __("Group by Voucher"),
@@ -81,12 +94,12 @@ frappe.query_reports["General Ledger"] = {
 			"label": __("Group by Account"),
 			"fieldtype": "Check",
 		},
-		{
+		/*{
 			"fieldname":"letter_head",
 			"label": __("Letter Head"),
 			"fieldtype": "Link",
 			"options": "Letter Head",
 			"default": frappe.defaults.get_default("letter_head"),
-		}
+		} */
 	]
 }

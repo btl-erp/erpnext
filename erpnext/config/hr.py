@@ -4,7 +4,7 @@ from frappe import _
 def get_data():
 	return [
 		{
-			"label": _("Employee and Attendance"),
+			"label": _("Employee Records"),
 			"items": [
 				{
 					"type": "doctype",
@@ -13,42 +13,120 @@ def get_data():
 				},
 				{
 					"type": "doctype",
-					"name": "Attendance",
-					"description": _("Attendance record."),
-				},                                
-				{
-					"type": "doctype",
-					"name": "Upload Attendance",
-					"description":_("Upload attendance from a .csv file"),
-					"hide_count": True
-				},
-                                {
-					"type": "doctype",
-					"name": "Employee Attendance Tool",
-					"label": _("Employee Attendance Tool"),
-					"description":_("Mark Attendance for multiple employees"),
-					"hide_count": True
-				},
+					"label": "Employee Group",
+					"name": "Employee Group",
+					"description": _("Customer database."),
+				}, 
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Attendance",
+				# 	"description": _("Attendance record."),
+				# },                                
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Attendance Upload",
+				# 	"label": "GEP Attendance Upload",
+				# 	"description":_("Upload attendance from a .csv file"),
+				# },
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Upload Attendance",
+				# 	"description":_("Upload attendance from a .csv file"),
+				# 	"hide_count": True
+				# },
+                # {
+				# 	"type": "doctype",
+				# 	"name": "Employee Attendance Tool",
+				# 	"label": _("Employee Attendance Tool"),
+				# 	"description":_("Mark Attendance for multiple employees"),
+				# 	"hide_count": True
+				# },
+				# {
+                #    "type": "doctype",
+                #    "name": "Training Records",
+                #    "description":_("Training And Development"),
+                #    "label": _("Training And Development")
+                # },
+				# {
+                #     "type": "doctype",
+                #     "name": "Salary Advance",
+                #     "description":_("Salary Advance"),
+                #     "label": _("Salary Advance Application")
+                # },
+				# {	
+				# 	"type": "doctype",
+                #     "name": "SWS Application",
+                #     "description":_("SWS Application"),
+                # 	"label": _("SWS Application")
+				# },
+				# {	
+				# 	"type": "doctype",
+                #     "name": "Vehicle Request",
+                #     "description":_("Vehicle Request"),
+                #     "label": _("Vehicle Request")
+				# },
 			]
 		},
 		{
-			"label": _("Recruitment"),
+			"label": _("MR Management"),
+			"icon": "icon-facetime-video",
 			"items": [
 				{
 					"type": "doctype",
-					"name": "Job Opening",
-					"description": _("Opening for a Job."),
-				},                                
-				{
-					"type": "doctype",
-					"name": "Job Applicant",
-					"description": _("Applicant for a Job."),
+					"name": "Muster Roll Employee",
+					"description": _("Muster Roll Employee Data"),
 				},
 				{
 					"type": "doctype",
-					"name": "Offer Letter",
-					"description": _("Offer candidate a Job."),
+					"name": "MusterRoll Application",
+					"label": "Muster Roll Application",
 				},
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Attendance Tool Others",
+				# 	"label": "Attendance Tool",
+				# 	"description": _("Attendance Tool for Others"),
+				# },
+				{
+					"type": "doctype",
+					"name": "Upload Attendance Others",
+					"label": "Upload Bulk Attendance",
+					"description": _("Attendance Tool for Others"),
+				},
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Project Overtime Tool",
+				# 	"label": "Overtime Tool",
+				# 	"description": _("Overtime Tool for MR and GEP"),
+				# },
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Upload Overtime Entries",
+				# 	"label": "Upload Overtime Entry",
+				# 	"description": _("Overtime Tool for Others"),
+				# },
+				{
+					"type": "doctype",
+					"name": "Process MR Payment",
+					"label": "Process Payment",
+					"description": _("Process Payments for Project Muster Roll"),
+				},
+				{
+					"type": "report",
+					"is_query_report": True,
+					"name": "Attendance Register",
+					"label": "Attendance Register",
+					"description": _("Attendance Sheet"),
+					"doctype": "Attendance Others"
+				},
+				# {
+				# 	"type": "report",
+				# 	"is_query_report": True,
+				# 	"name": "Overtime Register",
+				# 	"label": "Overtime Register",
+				# 	"description": _("Overtime Register"),
+				# 	"doctype": "Overtime Entry"
+				# },
 			]
 		},
 		{
@@ -85,6 +163,11 @@ def get_data():
 					"label": _("Leave Allocation Tool"),
 					"description":_("Allocate leaves for the year."),
 					"hide_count": True
+				},
+                                {
+					"type": "doctype",
+					"name": "Leave Adjustment",
+					"label": _("Leave Adjustment Tool"),
 				},
 			]
 		},
@@ -147,7 +230,7 @@ def get_data():
 				{
 					"type": "doctype",
 					"name": "Travel Claim",
-                                        "label": _("Travel Claim"),
+                    "label": _("Travel Claim"),
 					"description": _("Claims for travels"),
 				},
 				{
@@ -161,31 +244,34 @@ def get_data():
                                         "label": _("Process LTC"),
 					"description": _("LTC process"),
 				},
-				{
-					"type": "doctype",
-					"name": "PBVA",
-                                        "label": _("Process PBVA"),
-					"description": _("PBVA process"),
-				},
-				{
-					"type": "doctype",
-					"name": "Expense Claim",
-                                        "label": _("Expense Claim"),
-				},
-			]
-		},
-                {
-			"label": _("Training & Development"),
-			"items": [
-				{
-					"type": "doctype",
-					"name": "Training And Development",
-					"description": _("Traning & Development Master."),
-				},                  
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Bonus",
+                #                         "label": _("Process Bonus"),
+				# 	"description": _("Bonus Process"),
+				# },
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Overtime Authorization",
+                #                         "label": _("Overtime Authorization"),
+				# 	"description": _("Overtime Authorization"),
+				# },
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Overtime Claim",
+                #                         "label": _("Overtime Claim"),
+				# 	"description": _("Overtime Claim"),
+				# },
+				# {
+				# 	"type": "doctype",
+				# 	"name": "Employee Benefits",
+                #                         "label": _("Process Employee Benefits"),
+				# },
+				
 			]
 		},
 		{
-			"label": _("Setup"),
+			"label": _("Settings"),
 			"icon": "icon-cog",
 			"items": [
 				{
@@ -193,21 +279,48 @@ def get_data():
 					"name": "HR Settings",
 					"description": _("Settings for HR Module")
 				},
+				#{
+				#	"type": "doctype",
+				#	"name": "Leave Encashment Settings",
+				#	"description": _("Leave Encashment Settings"),
+				#},                                
+				#{
+				#	"type": "doctype",
+				#	"name": "Department Director",
+				#	"label": "Department\'s Director",
+				#	"description": _("Assign Directors to Departments")
+				#},
 				{
 					"type": "doctype",
-					"name": "Leave Encashment Settings",
-					"description": _("Leave Encashment Settings"),
-				},                                
-                                {
-					"type": "doctype",
-					"name": "Production Incentives",
-					"label": _("MPI Target Setting"),
-					"description": _("MPI Target Setup")
+					"name": "Assign Branch",
+					"label": "Branch Access Control",
+					"description": _("Assign Multiple Branches to Users")
 				},
+				{
+					"type": "doctype",
+					"name": "Officiating Employee",
+					"label": "Nominate Officiating",
+					"description": _("Nominate officiating employees")
+				},
+				{
+					"type": "doctype",
+					"name": "Employee Grade",
+					"description": _("List of Employee Grades"),
+				},                              
+				{
+					"type": "doctype",
+					"name": "Financial Institution",
+					"description": _("List of Financial Institution"),
+				},                                
+				{
+					"type": "doctype",
+					"name": "Financial Schemes",
+					"description": _("List of Financial Schemes"),
+				},                                
 			]
 		},
 		{
-			"label": _("Reports"),
+			"label": _("Salary Reports"),
 			"icon": "icon-list",
 			"items": [
                                 {
@@ -251,6 +364,82 @@ def get_data():
                                         "label": _("Salary Tax & Health Contribution Report"),
 					"doctype": "Salary Slip"
 				},
+                                {
+					"type": "report",
+					"is_query_report": True,
+					"name": "Earning Report",
+					"doctype": "Salary Slip"
+				},
+
+				{
+					"type" : "report",
+					"is_query_report": True,
+					"name": "Salary Increment",
+					"label": _("Salary Increment Report"),
+					"doctype": "Salary Increment"
+				},
+
+				{
+                                        "type" : "report",
+                                        "is_query_report": True,
+                                        "name": "Salary Payable Report",
+                                        "label": _("Salary Payable Report"),
+                                        "doctype": "Salary Slip"
+                                },
+				{
+                                        "type" : "report",
+                                        "is_query_report": True,
+                                        "name": "Other Recoveries",
+                                        "label": _("Other Recoveries"),
+                                        "doctype": "Salary Slip"
+                                },
+				{
+                                        "type" : "report",
+                                        "is_query_report": True,
+                                        "name": "Summarized Salary Report",
+                                        "label": _("Summarized Salary Report"),
+                                        "doctype": "Salary Slip",
+                                },
+				# {
+				# 	"type" : "report",
+				# 	"is_query_report": True,
+				# 	"name": "Alimony Report",
+				# 	"label":_("Alimony Report"),
+				# 	"doctype" : "Salary Slip"
+				# },
+                                # {
+                                #         "type" : "report",
+                                #         "is_query_report": True,
+                                #         "name": "House Rent Report",
+                                #         "label": _("House Rent Report"),
+                                #         "doctype": "Salary Slip",
+                                # },
+                                 {
+                                        "type" : "report",
+                                        "is_query_report": True,
+                                        "name": "Staff Welfare Scheme",
+                                        "label": _("Staff Welfare Scheme"),
+                                        "doctype": "Salary Slip"
+                                },
+				 {
+                                        "type" : "report",
+                                        "is_query_report": True,
+                                        "name": "Adhoc Recoveries",
+                                        "label": _("Adhoc Recoveries"),
+                                        "doctype": "Salary Slip"
+                                }
+			]
+		},
+		{
+			"label": _("Other Reports"),
+			"icon": "icon-list",
+			"items": [
+                                {
+					"type": "report",
+					"is_query_report": True,
+					"name": "Employee Salary Structure",
+					"doctype": "Salary Structure"
+				},
 				{
 					"type": "report",
 					"is_query_report": True,
@@ -266,21 +455,15 @@ def get_data():
 				},
 				{
 					"type": "report",
-					"is_query_report": True,
-					"name": "Employees working on a holiday",
-					"doctype": "Employee"
-				},
-				{
-					"type": "report",
 					"name": "Employee Information",
 					"doctype": "Employee"
 				},
-				{
-					"type": "report",
-					"is_query_report": True,
-					"name": "Monthly Attendance Sheet",
-					"doctype": "Attendance"
-				},
+				# {
+				# 	"type": "report",
+				# 	"is_query_report": True,
+				# 	"name": "Monthly Attendance Sheet",
+				# 	"doctype": "Attendance"
+				# },
                                 {
 					"type": "report",
 					"is_query_report": True,
@@ -288,6 +471,23 @@ def get_data():
                                         "label": "RRCO Tax Slab Details",
 					"doctype": "Salary Tax"
 				},
+                                {
+					"type": "report",
+					"is_query_report": True,
+					"name": "Employee Due Date Report",
+					"doctype": "Employee"
+				},
+				{
+                                        "type": "report",
+                                        "name": "LTC Details",
+                                        "doctype": "Leave Travel Concession"
+                },
+				{
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "Travel Report",
+                                        "doctype": "Travel Claim"
+				}
 			]
 		},
 	]

@@ -1,14 +1,18 @@
 // Copyright (c) 2016, Frappe Technologies Pvt. Ltd. and contributors
 // For license information, please see license.txt
 
-//cur_frm.add_fetch('employee','employee_name','employee_name');
+cur_frm.add_fetch('employee','branch','branch');
 
 frappe.ui.form.on('Leave Encashment', {
 	onload: function(frm){
 		//frm.set_query("employee", erpnext.queries.employee);
 		if (!frm.doc.application_date) {
 			frm.set_value("application_date", get_today());
-		}		
+		}
+
+		if(frm.doc.__islocal){
+			get_leave_balance(frm.doc);
+		}
 	},
 	
 	refresh: function(frm) {
@@ -25,11 +29,13 @@ frappe.ui.form.on('Leave Encashment', {
 	
 
 	employee: function(frm){
+		// Following code commented by SHIV on 2018/10/12
+		/*
 		if (frm.doc.division) {
 			frappe.call({
 				method: "erpnext.hr.doctype.leave_encashment.leave_encashment.get_employee_cost_center",
 				args: {
-					division: frm.doc.division
+					emp: frm.doc.employee
 				},
 				callback: function(r){
 					frm.trigger("get_le_settings");
@@ -38,8 +44,24 @@ frappe.ui.form.on('Leave Encashment', {
 				}
 			});
 		}
+		*/
+		frm.set_value('encashed_days',0);
+		frm.set_value('balance_before',0);
+		frm.set_value('balance_after',0);
+		get_leave_balance(frm.doc);
 	},
 
+	application_date: function(frm){
+		// Following code commented by SHIV on 2018/10/12
+		/*
+		frm.trigger("get_le_settings");
+		frm.trigger("get_leave_balance");
+		*/
+		get_leave_balance(frm.doc);
+	},
+	
+	// Following code commented by SHIV on 2018/10/12
+	/*
 	balance_before: function(frm){
 		if (frm.doc.balance_before){
 			frm.set_value('balance_after',(frm.doc.balance_before?frm.doc.balance_before:0)-frm.doc.encashed_days);
@@ -52,7 +74,7 @@ frappe.ui.form.on('Leave Encashment', {
 				method: "erpnext.hr.doctype.leave_application.leave_application.get_leave_balance_on",
 				args: {
 					employee: frm.doc.employee,
-					date: frm.doc.application_date,
+					ason_date: frm.doc.application_date,
 					leave_type: frm.doc.leave_type,
 					consider_all_leaves_in_the_allocation_period: true
 				},
@@ -78,5 +100,14 @@ frappe.ui.form.on('Leave Encashment', {
 			});
 		}		
 	}
+	*/
 	
 });
+
+// Following function created by SHIV on 2018/10/12
+var get_leave_balance = function(doc){
+	cur_frm.call({
+		method: "get_leave_balance",
+		doc: doc
+	});
+}
