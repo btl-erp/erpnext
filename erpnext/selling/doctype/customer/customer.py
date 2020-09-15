@@ -5,6 +5,7 @@ from __future__ import unicode_literals
 import frappe
 from frappe.model.naming import make_autoname
 from frappe import _, msgprint, throw
+from frappe.utils import cstr, flt, cint, getdate, now_datetime, formatdate, strip
 import frappe.defaults
 from frappe.utils import flt, cint, cstr
 from frappe.desk.reportview import build_match_conditions
@@ -22,28 +23,36 @@ class Customer(TransactionBase):
 		load_address_and_contact(self, "customer")
 
 	def autoname(self):
-		cust_master_name = frappe.defaults.get_global_default('cust_master_name')
-		if cust_master_name == 'Customer Name':
-			self.name = self.get_customer_name()
+		self.customer_code = self.get_current_customer_code()
+				
+		if not self.customer_code:
+			msgprint(_("customer Code is mandatory because customer is not automatically numbered"), raise_exception=1)
+
+		self.customer_code = strip(self.customer_code)
+		self.name = self.customer_name
+
+	def get_current_customer_code(self):
+		customer_code = frappe.db.sql("""select customer_code from tabCustomer where customer_group=%s order by customer_code desc limit 1;""", self.customer_group);
+
+		if customer_code:
+			return str(int(customer_code[0][0]) + 1);
 		else:
-			if not self.naming_series:
-				frappe.throw(_("Series is mandatory"), frappe.MandatoryError)
-
-			self.name = make_autoname(self.naming_series+'.#####')
-
-	def get_customer_name(self):
-		if frappe.db.get_value("Customer", self.customer_name):
-			count = frappe.db.sql("""select ifnull(max(SUBSTRING_INDEX(name, ' ', -1)), 0) from tabCustomer
-				 where name like %s""", "%{0} - %".format(self.customer_name), as_list=1)[0][0]
-			count = cint(count) + 1
-			return "{0} - {1}".format(self.customer_name, cstr(count))
-
-		return self.customer_name
+			if self.customer_group:
+				#frappe.msgprint("{0}".format(self.customer_group))
+				base = frappe.db.get_value("Customer Group", self.customer_group, "customer_code_base")
+				if not base:
+					frappe.throw("Setup Customer Code Base in Customer Group")
+				return str(base)
 
 	def validate(self):
 		self.flags.is_new_doc = self.is_new()
 		validate_party_accounts(self)
 		self.status = get_party_status(self)
+		self.check_id_required()
+
+	def check_id_required(self):
+		if self.customer_group == "Domestic" and not self.customer_id:
+			frappe.throw("CID or License No is mandatory for domestic customers")
 
 	def update_lead_status(self):
 		if self.lead_name:
@@ -216,3 +225,12 @@ def get_credit_limit(customer, company):
 		credit_limit = frappe.db.get_value("Company", company, "credit_limit")
 
 	return flt(credit_limit)
+
+##
+# Run from hooks to correct the data
+##
+def check_cc_branch():
+	cus_list = frappe.db.sql("select name, cost_center, branch from tabCustomer where (branch is null and cost_center is not null) or (branch is not null and cost_center is null)", as_dict=True)
+	for a in cus_list:
+		frappe.db.sql("update tabCustomer set cost_center = null, branch = null where name = %s", a.name)
+

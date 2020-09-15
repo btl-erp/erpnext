@@ -14,16 +14,18 @@ from erpnext.accounts.doctype.sales_invoice.pos import update_multi_mode_option
 from erpnext.controllers.selling_controller import SellingController
 from erpnext.accounts.utils import get_account_currency
 from erpnext.stock.doctype.delivery_note.delivery_note import update_billed_amount_based_on_so
-from erpnext.accounts.doctype.asset.depreciation \
+from erpnext.assets.doctype.asset.depreciation \
 	import get_disposal_account_and_cost_center, get_gl_entries_on_asset_disposal
 from frappe.model.naming import make_autoname
-from erpnext.custom_autoname import get_auto_name
+from erpnext.custom_utils import check_uncancelled_linked_doc, check_future_date
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
 }
 
 class SalesInvoice(SellingController):
+	void_cc = ""
+
 	def __init__(self, arg1, arg2=None):
 		super(SalesInvoice, self).__init__(arg1, arg2)
 		self.status_updater = [{
@@ -42,9 +44,6 @@ class SalesInvoice(SellingController):
 			'overflow_type': 'billing'
 		}]
 
-	def autoname(self):
-		self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
-
 	def set_indicator(self):
 		"""Set indicator for portal"""
 		if self.outstanding_amount > 0:
@@ -55,7 +54,9 @@ class SalesInvoice(SellingController):
 			self.indicator_title = _("Paid")
 
 	def validate(self):
+		check_future_date(self.posting_date)
 		super(SalesInvoice, self).validate()
+		self.check_ba()
 		self.validate_posting_time()
 		self.so_dn_required()
 		self.validate_proj_cust()
@@ -94,10 +95,12 @@ class SalesInvoice(SellingController):
 		set_account_for_mode_of_payment(self)
 
 	def on_submit(self):
+		self.check_advance_amount()
 		if not self.recurring_id:
 			frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype,
 			 	self.company, self.base_grand_total, self)
 
+		self.check_ba()
 		self.check_prev_docstatus()
 
 		if self.is_return:
@@ -124,6 +127,12 @@ class SalesInvoice(SellingController):
 			self.update_against_document_in_jv()
 
 		self.update_time_sheet(self.name)
+
+	def check_advance_amount(self):
+		if self.advances and not flt(self.outstanding_amount) == 0:
+			for a in self.advances:
+				if a.advance_amount > a.allocated_amount:
+					frappe.throw("Outstanding Amount should be zero for Sales Invoice with Advance")
 
 	def before_cancel(self):
 		self.update_time_sheet(None)
@@ -491,7 +500,8 @@ class SalesInvoice(SellingController):
 
 	def make_gl_entries(self, repost_future_gle=True):
 		gl_entries = self.get_gl_entries()
-
+#		if self.name == "SI19030062":
+#			frappe.throw("{0}".format(gl_entries))
 		if gl_entries:
 			from erpnext.accounts.general_ledger import make_gl_entries
 
@@ -527,6 +537,10 @@ class SalesInvoice(SellingController):
 		self.make_item_gl_entries(gl_entries)
 		
 		self.make_advance_gl_entry(gl_entries)
+
+		#self.make_loading_gl_entry(gl_entries)
+
+		#self.make_void_gl_entry(gl_entries)
 		
 		# merge gl entries before adding pos entries
 		gl_entries = merge_similar_entries(gl_entries)
@@ -535,15 +549,19 @@ class SalesInvoice(SellingController):
 		self.make_gle_for_change_amount(gl_entries)
 
 		self.make_write_off_gl_entry(gl_entries)
-
 		return gl_entries
 
 	def make_customer_gl_entry(self, gl_entries):
 		if self.grand_total:
 			# Didnot use base_grand_total to book rounding loss gle
-			grand_total_in_company_currency = flt(self.grand_total * self.conversion_rate,
+			grand_total_in_company_currency = flt(flt(self.grand_total * self.conversion_rate) - flt(self.void_amount * self.conversion_rate),
 				self.precision("grand_total"))
+			#grand_total_in_company_currency = flt(self.grand_total * self.conversion_rate,
+			#	self.precision("grand_total"))
+			grand_total = flt(self.grand_total) - flt(self.void_amount)
 
+                        cost_center = frappe.db.get_value("Branch", self.branch, "cost_center")
+                        
 			gl_entries.append(
 				self.get_gl_dict({
 					"account": self.debit_to,
@@ -552,9 +570,11 @@ class SalesInvoice(SellingController):
 					"against": self.against_income_account,
 					"debit": grand_total_in_company_currency,
 					"debit_in_account_currency": grand_total_in_company_currency \
-						if self.party_account_currency==self.company_currency else self.grand_total,
+						if self.party_account_currency==self.company_currency else grand_total,
 					"against_voucher": self.return_against if cint(self.is_return) else self.name,
-					"against_voucher_type": self.doctype
+					"against_voucher_type": self.doctype,
+                                        "cost_center": cost_center,
+					"business_activity": self.business_activity,
 				}, self.party_account_currency)
 			)
 		
@@ -584,6 +604,7 @@ class SalesInvoice(SellingController):
 					fixed_asset_gl_entries = get_gl_entries_on_asset_disposal(asset, item.base_net_amount)
 					for gle in fixed_asset_gl_entries:
 						gle["against"] = self.customer
+						gle["business_activity"] = asset.business_activity
 						gl_entries.append(self.get_gl_dict(gle))
 
 					asset.db_set("disposal_date", self.posting_date)
@@ -597,12 +618,15 @@ class SalesInvoice(SellingController):
 							"credit": item.base_net_amount,
 							"credit_in_account_currency": item.base_net_amount \
 								if account_currency==self.company_currency else item.net_amount,
-							"cost_center": item.cost_center
+							"cost_center": item.cost_center,
+							"business_activity": item.business_activity,
 						}, account_currency)
 					)
 					
 					if item.normal_loss_amt:
-						normal_account = frappe.db.get_value('Company', self.company, 'normal_loss_account') 
+						normal_account = frappe.db.get_single_value("Sales Accounts Settings", "normal_loss_account")
+						if not normal_account:
+							frappe.throw("Setup Normal Loss Account in Sales Accounts Settings")
 						account_currency = get_account_currency(normal_account)
 						gl_entries.append(
 							self.get_gl_dict({
@@ -614,6 +638,7 @@ class SalesInvoice(SellingController):
 								"debit_in_account_currency": item.normal_loss_amt \
 									if account_currency==self.company_currency else (item.normal_loss_amt * self.conversion_rate, self.precision("grand_total")) ,
 								"cost_center": item.cost_center,
+								"business_activity": item.business_activity,
 							}, account_currency)
 						)
 					
@@ -626,14 +651,17 @@ class SalesInvoice(SellingController):
 								"credit": item.normal_loss_amt,
 								"credit_in_account_currency": item.normal_loss_amt \
 									if account_currency==self.company_currency else (item.normal_loss_amt * self.conversion_rate, self.precision("grand_total")) ,
-								#"cost_center": item.cost_center
+								"cost_center": item.cost_center,
+								"business_activity": item.business_activity,
 								"against_voucher": self.return_against if cint(self.is_return) else self.name,
 								"against_voucher_type": self.doctype
 							}, account_currency)
 						)
 
 					if item.abnormal_loss_amt:
-						abnormal_account = frappe.db.get_value('Company', self.company, 'abnormal_loss_account') 
+						abnormal_account = frappe.db.get_single_value("Sales Accounts Settings", "abnormal_loss_account")
+						if not abnormal_account:
+							frappe.throw("Setup Abnormal Loss Account in Sales Accounts Settings")
 						account_currency = get_account_currency(abnormal_account)
 						gl_entries.append(
 							self.get_gl_dict({
@@ -645,6 +673,7 @@ class SalesInvoice(SellingController):
 								"debit_in_account_currency": item.abnormal_loss_amt \
 									if account_currency==self.company_currency else (item.abnormal_loss_amt * self.conversion_rate, self.precision("grand_total")) ,
 								"cost_center": item.cost_center,
+								"business_activity": item.business_activity,
 							}, account_currency)
 						)
 					
@@ -657,7 +686,8 @@ class SalesInvoice(SellingController):
 								"credit": item.abnormal_loss_amt,
 								"credit_in_account_currency": item.abnormal_loss_amt \
 									if account_currency==self.company_currency else (item.abnormal_loss_amt * self.conversion_rate, self.precision("grand_total")) ,
-								#"cost_center": item.cost_center
+								"cost_center": item.cost_center,
+								"business_activity": item.business_activity,
 								"against_voucher": self.return_against if cint(self.is_return) else self.name,
 								"against_voucher_type": self.doctype
 							}, account_currency)
@@ -678,6 +708,7 @@ class SalesInvoice(SellingController):
 								"credit_in_account_currency": excess_amount \
 									if account_currency==self.company_currency else (excess_amount * self.conversion_rate, self.precision("grand_total")) ,
 								"cost_center": item.cost_center,
+								"business_activity": item.business_activity,
 								"remark": remark,
 								"remarks": remark,
 							}, account_currency)
@@ -695,7 +726,36 @@ class SalesInvoice(SellingController):
 								"against_voucher_type": self.doctype,
 								"remark": remark,
 								"remarks": remark,
+								"business_activity": item.business_activity,
+								"cost_center": item.cost_center
 							}, account_currency)
+						)
+					additional_cost = self.fitting_and_installation_charges + self.transportation_charges + self.loading_cost
+					if additional_cost > 0:
+						gl_entries.append(
+							self.get_gl_dict({
+								"account": item.income_account,
+								"credit": flt(additional_cost) ,
+								"credit_in_account_currency": flt(additional_cost) \
+									if self.party_account_currency==self.company_currency else flt(additional_cost),
+								"business_activity": item.business_activity,
+								"cost_center": item.cost_center
+							}, self.party_account_currency)
+						)
+
+					if self.void_amount:
+						void_account = frappe.db.get_single_value("Sales Accounts Settings", "void_account")
+						if not void_account:
+							frappe.throw("Setup Void Account in Sales Accounts Settings")	
+						gl_entries.append(
+							self.get_gl_dict({
+								"account": void_account,
+								"debit": flt(self.void_rate * .01 * flt(item.amount + flt(self.rate_per_unit * item.delivered_qty)) * self.conversion_rate) ,
+								"debit_in_account_currency": flt(self.void_rate * .01 * (item.amount + flt(self.rate_per_unit * item.delivered_qty)) * self.conversion_rate) \
+									if self.party_account_currency==self.company_currency else flt(self.void_rate * .01 * (item.amount + flt(self.rate_per_unit * item.delivered_qty))),
+								"business_activity": item.business_activity,
+								"cost_center": item.cost_center
+							}, self.party_account_currency)
 						)
 
 		# expense account gl entries
@@ -778,6 +838,7 @@ class SalesInvoice(SellingController):
 						if self.party_account_currency==self.company_currency else self.write_off_amount,
 					"against_voucher": self.return_against if cint(self.is_return) else self.name,
 					"against_voucher_type": self.doctype,
+					"business_activity": self.business_activity,
 					"cost_center": self.write_off_cost_center
 				}, self.party_account_currency)
 			)
@@ -788,6 +849,7 @@ class SalesInvoice(SellingController):
 					"debit": self.base_write_off_amount,
 					"debit_in_account_currency": self.base_write_off_amount \
 						if write_off_account_currency==self.company_currency else self.write_off_amount,
+					"business_activity": self.business_activity,
 					"cost_center": self.write_off_cost_center
 				}, write_off_account_currency)
 			)
@@ -812,6 +874,8 @@ class SalesInvoice(SellingController):
 					"credit_in_account_currency": allocated_amount, 
 					"against_voucher": self.return_against if cint(self.is_return) else self.name,
 					"against_voucher_type": self.doctype,
+					"business_activity": a.advance_business_activity,
+					"cost_center": a.advance_cost_center
 				}, advance_account_currency)
 			)
 			gl_entries.append(
@@ -822,11 +886,51 @@ class SalesInvoice(SellingController):
 					"against": self.customer,
 					"debit": allocated_amount,
 					"debit_in_account_currency": allocated_amount,
+					"business_activity": a.advance_business_activity,
+					"against_voucher": self.return_against if cint(self.is_return) else self.name,
+					"against_voucher_type": self.doctype,
 					"cost_center": a.advance_cost_center
 				}, advance_account_currency)
 			)
-		
 
+	def make_loading_gl_entry(self, gl_entries):
+		additional_cost = self.fitting_and_installation_charges + self.transportation_charges + self.loading_cost
+		if additional_cost > 0:
+			gl_entries.append(
+				self.get_gl_dict({
+					"account": self.debit_to,
+					"party_type": "Customer",
+					"party": self.customer,
+					"against": self.against_income_account,
+					"credit": flt(additional_cost * self.conversion_rate) ,
+					"credit_in_account_currency": flt(additional_cost * self.conversion_rate) \
+						if self.party_account_currency==self.company_currency else additional_cost,
+					"against_voucher": self.return_against if cint(self.is_return) else self.name,
+					"business_activity": self.business_activity,
+					"against_voucher_type": self.doctype
+				}, self.party_account_currency)
+			)
+
+	def make_void_gl_entry(self, gl_entries):
+		if self.void_amount:
+			void_account = frappe.db.get_single_value("Sales Accounts Settings", "void_account")
+			if not void_account:
+				frappe.throw("Setup Void Account in Sales Accounts Settings")	
+			gl_entries.append(
+				self.get_gl_dict({
+					"account": void_account,
+					"party_type": "Customer",
+					"party": self.customer,
+					"against": self.against_income_account,
+					"debit": flt(self.void_amount * self.conversion_rate) ,
+					"debit_in_account_currency": flt(self.void_amount * self.conversion_rate) \
+						if self.party_account_currency==self.company_currency else self.void_amount,
+					"against_voucher": self.return_against if cint(self.is_return) else self.name,
+					"against_voucher_type": self.doctype,
+					"business_activity": self.business_activity,
+					"cost_center": self.items[0].cost_center
+				}, self.party_account_currency)
+			)
 
 	def update_billing_status_in_dn(self, update_modified=True):
 		updated_delivery_notes = []

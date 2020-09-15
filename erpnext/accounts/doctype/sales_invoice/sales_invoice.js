@@ -227,7 +227,7 @@ erpnext.accounts.SalesInvoiceController = erpnext.selling.SellingController.exte
 		var row = locals[cdt][cdn];
 		if(row.asset) {
 			frappe.call({
-				method: erpnext.accounts.doctype.asset.depreciation.get_disposal_account_and_cost_center,
+				method: erpnext.assets.doctype.asset.depreciation.get_disposal_account_and_cost_center,
 				args: {
 					"company": frm.doc.company
 				},
@@ -277,7 +277,51 @@ erpnext.accounts.SalesInvoiceController = erpnext.selling.SellingController.exte
 		}
 
 		this.frm.refresh_fields();
-	}
+	},
+	
+	rate_per_unit: function() {
+		if(this.frm.doc.rate_per_unit) {
+			var qty = 0
+			this.frm.doc.items.forEach(function(d) {
+				qty += d.delivered_qty	
+			})		
+			this.frm.set_value("total_loading_amount", qty * this.frm.doc.rate_per_unit)
+		}
+		else {
+			this.frm.set_value("total_loading_amount", 0)
+		}
+		this.frm.refresh_fields();
+	},
+	
+	void_rate: function() {
+		if(this.frm.doc.void_rate) {
+			this.frm.set_value("void_amount", this.frm.doc.void_rate * .01 * (this.frm.doc.total + this.frm.doc.total_loading_amount))
+		}
+		else {
+			this.frm.set_value("void_amount", 0)
+		}
+		this.frm.refresh_fields();
+	},
+
+	"discount_or_cost_amount": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+                cur_frm.refresh_field("discount_amount")
+        },
+
+        "transportation_charges": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+                cur_frm.refresh_field("discount_amount")
+        },
+
+	"additional_cost": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+        },
+
+	"loading_cost": function(frm) {
+		cur_frm.set_value("discount_amount", flt(frm.doc.discount_or_cost_amount) - flt(frm.doc.transportation_charges) - flt(frm.doc.additional_cost) - flt(frm.doc.loading_cost))
+		cur_frm.refresh_field("discount_amount")
+	},
 });
 
 // for backward compatibility: combine new and previous states
@@ -349,6 +393,7 @@ cur_frm.fields_dict.write_off_cost_center.get_query = function(doc) {
 	return{
 		filters:{
 			'is_group': 0,
+			'is_disabled': 0,
 			'company': doc.company
 		}
 	}
@@ -392,7 +437,9 @@ cur_frm.fields_dict["items"].grid.get_field("cost_center").get_query = function(
 	return {
 		filters: {
 			'company': doc.company,
-			"is_group": 0
+			"is_group": 0,
+			"is_disabled": 0,
+			"branch": doc.branch
 		}
 	}
 }
@@ -588,7 +635,6 @@ frappe.ui.form.on("Sales Invoice Item","loss_method",function(frm, cdt, cdn){
 });
 
 frappe.ui.form.on("Sales Invoice","items_on_form_rendered", function(frm, grid_row) {
-    console.log('On load is called...');
     cur_frm.call({
         method: "erpnext.accounts.accounts_custom_functions.get_loss_tolerance",
         callback: function(r) {
@@ -601,10 +647,10 @@ frappe.ui.form.on("Sales Invoice","items_on_form_rendered", function(frm, grid_r
              {
                   if (cur_frm.doc.docstatus == 0)
                   {
-                       grid_row.grid_form.fields_dict.name_tolerance.set_value(r.message[0][0]);
-                       grid_row.grid_form.fields_dict.loss_tolerance.set_value(r.message[0][1]);
-					   grid_row.grid_form.fields_dict.loss_qty_flat.set_value(r.message[0][2]);
-					   grid_row.grid_form.fields_dict.loss_method.set_value("Quantity in %");
+			grid_row.grid_form.fields_dict.name_tolerance.set_value(r.message[0][0]);
+			grid_row.grid_form.fields_dict.loss_tolerance.set_value(r.message[0][1]);
+			grid_row.grid_form.fields_dict.loss_qty_flat.set_value(r.message[0][2]);
+			grid_row.grid_form.fields_dict.loss_method.set_value("Quantity in %");
                   }
              }
 
@@ -620,7 +666,6 @@ frappe.ui.form.on("Sales Invoice","items_on_form_rendered", function(frm, grid_r
                        if (grid_row.grid_form.fields_dict.accepted_qty.value == 0)
                        {
                             var actual_qty = grid_row.grid_form.fields_dict.qty.value;
-                            console.log("Quantity"+actual_qty)
                             grid_row.grid_form.fields_dict.accepted_qty.set_value(actual_qty);
                             grid_row.grid_form.fields_dict.normal_loss.set_value(0);
                             grid_row.grid_form.fields_dict.abnormal_loss.set_value(0);
@@ -640,3 +685,14 @@ frappe.ui.form.on("Sales Invoice","items_on_form_rendered", function(frm, grid_r
         }
    })
 })
+
+
+//cost Center
+cur_frm.fields_dict['items'].grid.get_field('cost_center').get_query = function(frm, cdt, cdn) {
+        var d = locals[cdt][cdn];
+        return {
+                query: "erpnext.controllers.queries.filter_branch_cost_center",
+                filters: {'branch': frm.branch}
+        }
+}
+

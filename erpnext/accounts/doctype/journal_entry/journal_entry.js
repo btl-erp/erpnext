@@ -1,5 +1,14 @@
 // Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 // License: GNU General Public License v3. See license.txt
+/*
+--------------------------------------------------------------------------------------------------------------------------
+Version          Author          CreatedOn          ModifiedOn          Remarks
+------------ --------------- ------------------ -------------------  -----------------------------------------------------
+1.0		          SHIV		   04/09/2017                            * Added "Project Advance" to Reference Type
+2.0               SHIV         06/08/2018                            * Filtering bank accounts for "Journal Entry" as per
+																		support ticket# 867
+--------------------------------------------------------------------------------------------------------------------------                                                                          
+*/
 
 frappe.provide("erpnext.accounts");
 frappe.provide("erpnext.journal_entry");
@@ -9,16 +18,18 @@ frappe.ui.form.on("Journal Entry", {
 	setup: function(frm) {
 		frm.get_field('accounts').grid.editable_fields = [
 			{fieldname: 'account', columns: 3},
-			{fieldname: 'party', columns: 3},
+			{fieldname: 'party', columns: 1},
+			{fieldname: 'cost_center', columns: 2},
 			{fieldname: 'debit_in_account_currency', columns: 2},
 			{fieldname: 'credit_in_account_currency', columns: 2}
 		];
 	},
 
 	refresh: function(frm) {
-		erpnext.toggle_naming_series();
+		//erpnext.toggle_naming_series();
+		cur_frm.toggle_display("naming_series", 1)
 		frm.cscript.voucher_type(frm.doc);
-
+		
 		if(frm.doc.docstatus==1) {
 			frm.add_custom_button(__('Ledger'), function() {
 				frappe.route_options = {
@@ -51,10 +62,24 @@ frappe.ui.form.on("Journal Entry", {
 				$(".btn-sm").css("display", "inline");
 			});
 		}
+		if(cur_frm.fields_dict.naming_series) {
+			console.log("Naming Series")
+			cur_frm.toggle_display("naming_series", 1)
+		}
 	},
 
 	multi_currency: function(frm) {
 		erpnext.journal_entry.toggle_fields_based_on_currency(frm);
+	},
+	
+	get_series: function(frm) {
+		return frappe.call({
+			method: "get_series",
+			doc: frm.doc,
+			callback: function(r, rt) {
+				frm.reload_doc();
+			}
+		});
 	}
 })
 
@@ -93,20 +118,29 @@ erpnext.accounts.JournalEntry = frappe.ui.form.Controller.extend({
 			return {
 				filters: {
 					company: me.frm.doc.company,
-					is_group: 0
+					is_group: 0,
+					is_disabled: 0,
 				}
 			};
 		});
 
 		me.frm.set_query("party_type", "accounts", function(doc, cdt, cdn) {
 			return {
-				filters: {"name": ["in", ["Customer", "Supplier","Employee"]]}
+				filters: {"name": ["in", ["Customer", "Supplier","Employee","Equipment"]]}
 			}
 		});
 
 		me.frm.set_query("reference_name", "accounts", function(doc, cdt, cdn) {
 			var jvd = frappe.get_doc(cdt, cdn);
 
+			// ++++++++++++++++++++ Ver 1.0 BEGINS ++++++++++++++++++++
+			// Project Advance
+			// Following code added by SHIV on 04/09/2017
+			if(jvd.reference_type==="Project Advance"){
+				return {};
+			}
+			// +++++++++++++++++++++ Ver 1.0 ENDS +++++++++++++++++++++
+			
 			// expense claim
 			if(jvd.reference_type==="Expense Claim") {
 				return {};
@@ -422,7 +456,23 @@ frappe.ui.form.on("Journal Entry Account", {
 		}
 
 		erpnext.journal_entry.set_debit_credit_in_company_currency(frm, cdt, cdn);
-	}
+	},
+
+	/*"account_currency": function(frm, cdt, cdn) {
+		if(frm.doc.multi_currency) {
+			item = locals[cdt][cdn]
+			frappe.call({
+				method: "erpnext.hr.doctype.travel_authorization.travel_authorization.get_exchange_rate",
+				args: {
+					from_currency: item.account_currency,
+					to_currency: "BTN"
+				},
+				callback: function(r) {
+					frappe.model.set_value(cdt, cdn, "exchange_rate", r.message)
+				}
+			})
+		}		
+	} */
 })
 
 frappe.ui.form.on("Journal Entry Account", "accounts_remove", function(frm) {
@@ -562,6 +612,14 @@ $.extend(erpnext.journal_entry, {
 				account_currency: frappe.get_doc(":Company", frm.doc.company).default_currency
 			});
 		}
+		// ++++++++++++++++++++ Ver 2.0 BEGINS ++++++++++++++++++++
+		// Following code added by SHIV on 06/08/2018
+		if(frm.doc.voucher_type === 'Journal Entry'){
+			$.extend(filters, {
+				account_type: ["!=", "Bank"]
+			});
+		}
+		// +++++++++++++++++++++ Ver 2.0 ENDS +++++++++++++++++++++
 		return { filters: filters };
 	}
 });
@@ -573,7 +631,8 @@ frappe.ui.form.on("Journal Entry", "onload", function(frm){
         return {
             "filters": [
                 ["status", "!=", "Used"],
-                ["docstatus", "=", "1"]
+                ["docstatus", "=", "1"],
+	//      ["branch", "=", frm.doc.branch] 
             ]
         }
     });
@@ -581,18 +640,18 @@ frappe.ui.form.on("Journal Entry", "onload", function(frm){
 
 frappe.ui.form.on("Journal Entry", "select_cheque_lot", function(frm) {
      if(frm.doc.select_cheque_lot) {
-frappe.call({
-    method: "erpnext.accounts.doctype.cheque_lot.cheque_lot.get_cheque_no_and_date",
-    args: {
-        'name': frm.doc.select_cheque_lot
-        },
-    callback: function(r){
-           if (r.message) {
-               cur_frm.set_value("cheque_no", r.message[0].reference_no);
-               cur_frm.set_value("cheque_date", r.message[1].reference_date);
-           }
-       }
-});
+	frappe.call({
+	    method: "erpnext.accounts.doctype.cheque_lot.cheque_lot.get_cheque_no_and_date",
+	    args: {
+		'name': frm.doc.select_cheque_lot
+		},
+	    callback: function(r){
+		   if (r.message) {
+		       cur_frm.set_value("cheque_no", r.message[0].reference_no);
+		       cur_frm.set_value("cheque_date", r.message[1].reference_date);
+		   }
+	       }
+	});
 
      }
 })

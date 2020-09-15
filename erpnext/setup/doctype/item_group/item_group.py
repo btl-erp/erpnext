@@ -9,7 +9,7 @@ from frappe.utils.nestedset import NestedSet
 from frappe.website.website_generator import WebsiteGenerator
 from frappe.website.render import clear_cache
 from frappe.website.doctype.website_slideshow.website_slideshow import get_slideshow
-
+from frappe.desk.reportview import build_match_conditions
 
 class ItemGroup(NestedSet, WebsiteGenerator):
 	nsm_parent_field = 'parent_item_group'
@@ -23,9 +23,15 @@ class ItemGroup(NestedSet, WebsiteGenerator):
 		self.name = self.item_group_name
 
 	def validate(self):
+		self.validate_base()
 		super(ItemGroup, self).validate()
 		self.make_route()
-
+	
+	def validate_base(self):
+		if self.item_code_base:
+			if not self.item_code_base.isdigit():
+				frappe.throw("Item Code Base can only be numbers")
+	
 	def on_update(self):
 		NestedSet.on_update(self)
 		WebsiteGenerator.on_update(self)
@@ -147,3 +153,37 @@ def invalidate_cache_for(doc, item_group=None):
 		d = frappe.get_doc("Item Group", d.name)
 		if d.route:
 			clear_cache(d.route)
+
+
+
+def get_item_group_defaults(item, company):
+        item = frappe.get_doc("Item", item)
+        #item_group = frappe.get_doc("Item Group", item.item_group)
+        item_group = item.get("item_defaults")
+        #for d in item_group.item_group_defaults or []:
+        for d in item_group or []:
+                if d.company == company:
+                        row = copy.deepcopy(d.as_dict())
+                        row.pop("name")
+                        return row
+
+        return frappe._dict()
+
+
+
+#Show only child item groups
+def get_item_groups(doctype, txt, searchfield, start, page_len, filters):
+	fields = ["name"]
+
+	match_conditions = build_match_conditions("Item Group")
+	match_conditions = "and {}".format(match_conditions) if match_conditions else ""
+
+	return frappe.db.sql("""select %s from `tabItem Group` where is_group = 0 
+		and (%s like %s or name like %s)
+		{match_conditions}
+		order by
+		case when name like %s then 0 else 1 end,
+		name limit %s, %s""".format(match_conditions=match_conditions) %
+		(", ".join(fields), searchfield, "%s", "%s", "%s", "%s", "%s"),
+		("%%%s%%" % txt, "%%%s%%" % txt, "%%%s%%" % txt, start, page_len))
+

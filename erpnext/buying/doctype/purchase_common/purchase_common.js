@@ -14,9 +14,10 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 		this._super();
 		if(!in_list(["Material Request", "Request for Quotation"], this.frm.doc.doctype)){
 			this.frm.get_field('items').grid.editable_fields = [
-				{fieldname: 'item_code', columns: 3},
+				{fieldname: 'item_code', columns: 2},
+				{fieldname: 'item_name', columns: 2},
 				{fieldname: 'qty', columns: 2},
-				{fieldname: 'rate', columns: 3},
+				{fieldname: 'rate', columns: 2},
 				{fieldname: 'amount', columns: 2}
 			];
 		}
@@ -44,6 +45,10 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 					}
 				}
 			});
+		}
+		
+		frappe.form.link_formatters['Item'] = function(value, doc) {
+			return value + ': ' + doc.item_name;
 		}
 	},
 
@@ -166,6 +171,15 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 		this.conversion_factor(doc, cdt, cdn);
 
 	},
+	
+	tx_amount: function(doc, cdt, cdn) {
+		/*var item = frappe.get_doc(cdt, cdn);
+		if(item.tax_amount) {
+			item.net_rate = item.rate + (item.tax_amount / item.qty)	
+			item.net_amount = item.amount + item.tax_amount	
+		}*/ 
+		this.calculate_taxes_and_totals() 
+	},
 
 	received_qty: function(doc, cdt, cdn) {
 		var item = frappe.get_doc(cdt, cdn);
@@ -252,10 +266,11 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 
 	tc_name: function() {
 		this.get_terms();
-	}
+	},
+
 });
 
-cur_frm.add_fetch('project', 'cost_center', 'cost_center');
+//cur_frm.add_fetch('project', 'cost_center', 'cost_center');
 
 erpnext.buying.get_default_bom = function(frm) {
 	$.each(frm.doc["items"] || [], function(i, d) {
@@ -307,6 +322,7 @@ erpnext.buying.get_items_from_product_bundle = function(frm) {
 		args = dialog.get_values();
 		if(!args) return;
 		dialog.hide();
+
 		return frappe.call({
 			type: "GET",
 			method: "erpnext.stock.doctype.packed_item.packed_item.get_items_from_product_bundle",

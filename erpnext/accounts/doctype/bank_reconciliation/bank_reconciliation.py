@@ -1,5 +1,16 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
+'''
+--------------------------------------------------------------------------------------------------------------------------
+Version          Author          CreatedOn          ModifiedOn          Remarks
+------------ --------------- ------------------ -------------------  -----------------------------------------------------
+2.0		  SSK		                   28/05/2016         Added following payments
+                                                                        * HSD Payment,
+                                                                        * Imprest Recoup,
+                                                                        * Mechanical Payment,
+                                                                        * Project Payment added.
+--------------------------------------------------------------------------------------------------------------------------                                                                          
+'''
 
 from __future__ import unicode_literals
 import frappe
@@ -26,7 +37,7 @@ class BankReconciliation(Document):
 			select 
 				"Journal Entry" as payment_document, t1.name as payment_entry, 
 				t1.cheque_no as cheque_number, t1.cheque_date, 
-				abs(t2.debit_in_account_currency - t2.credit_in_account_currency) as amount, 
+				sum(abs(t2.debit_in_account_currency - t2.credit_in_account_currency)) as amount, 
 				t1.posting_date, t2.against_account, t1.clearance_date
 			from
 				`tabJournal Entry` t1, `tabJournal Entry Account` t2
@@ -34,6 +45,7 @@ class BankReconciliation(Document):
 				t2.parent = t1.name and t2.account = %s and t1.docstatus=1
 				and t1.posting_date >= %s and t1.posting_date <= %s 
 				and ifnull(t1.is_opening, 'No') = 'No' {0}
+			group by t1.name, t1.cheque_no, t1.cheque_date, t1.posting_date, t2.against_account, t1.clearance_date
 			order by t1.posting_date ASC, t1.name DESC
 		""".format(condition), (self.bank_account, self.from_date, self.to_date), as_dict=1)
 				
@@ -51,8 +63,103 @@ class BankReconciliation(Document):
 				posting_date ASC, name DESC
 		""".format(condition), 
 		(self.bank_account, self.bank_account, self.bank_account, self.from_date, self.to_date), as_dict=1)
+
+		for pe in payment_entries:
+                        total_deductions = 0
+                        for d in frappe.get_all("Payment Entry Deduction", ["amount"], {"parent":pe.payment_entry}):
+                                total_deductions += flt(d.amount)
+
+			tds_amount = frappe.db.get_value("Payment Entry", pe.payment_entry, "tds_amount")
+
+                        if frappe.db.get_value(pe.payment_document, pe.payment_entry, "payment_type") == "Pay":
+                                pe.amount += total_deductions
+                        else:
+                                pe.amount -= total_deductions
+                                pe.amount -= tds_amount
+
+                #
+                # Ver 2.0 Begins, Following entries added by SHIV on 28/05/2018
+                #
+		hsd_entries = frappe.db.sql("""
+                        select
+                                "HSD Payment" as payment_document, name as payment_entry,
+                                cheque__no as cheque_number, cheque_date,
+                                amount,
+                                posting_date, supplier as against_account, clearance_date
+                        from `tabHSD Payment`
+                        where bank_account = '{0}'
+                        and docstatus = 1
+                        and posting_date >= '{1}' and posting_date <= '{2}'
+                        {3}
+                """.format(self.bank_account, self.from_date, self.to_date, condition), as_dict=1)
+
+		imprest_entries = frappe.db.sql("""
+                        select
+                                "Imprest Recoup" as payment_document, name as payment_entry,
+                                cheque_no as cheque_number, cheque_date,
+                                purchase_amount as amount,
+                                posting_date, branch as against_account, clearance_date
+                        from `tabImprest Recoup`
+                        where revenue_bank_account = '{0}'
+                        and docstatus = 1
+                        and posting_date >= '{1}' and posting_date <= '{2}'
+                        {3}
+                """.format(self.bank_account, self.from_date, self.to_date, condition), as_dict=1)
+
+                direct_payment_entries = frappe.db.sql("""
+                        select
+                                "Direct Payment" as payment_document, name as payment_entry,
+                                cheque_no as cheque_number, cheque_date,
+                                net_amount as amount,
+                                posting_date, branch as against_account, clearance_date
+                        from `tabDirect Payment`
+                        where '{0}' IN (credit_account, debit_account)
+                        and docstatus = 1
+                        and posting_date between '{1}' and '{2}'
+                        {3}
+                """.format(self.bank_account, self.from_date, self.to_date, condition), as_dict=1)
+
+		mechanical_entries  = frappe.db.sql("""
+                        select
+                                "Mechanical Payment" as payment_document, name as payment_entry,
+                                cheque_no as cheque_number, cheque_date,
+                                net_amount as amount,
+                                posting_date, customer as against_account, clearance_date
+                        from `tabMechanical Payment`
+                        where '{0}' IN (income_account, expense_account)
+                        and docstatus = 1
+                        and posting_date >= '{1}' and posting_date <= '{2}'
+                        {3}
+                """.format(self.bank_account, self.from_date, self.to_date, condition), as_dict=1)
+
+		project_entries = frappe.db.sql("""
+                        select
+                                "Project Payment" as payment_document, name as payment_entry,
+                                cheque_no as cheque_number, cheque_date,
+                                paid_amount as amount,
+                                posting_date, party as against_account, clearance_date
+                        from `tabProject Payment`
+                        where revenue_bank_account = '{0}'
+                        and docstatus = 1
+                        and posting_date >= '{1}' and posting_date <= '{2}'
+                        {3}
+                """.format(self.bank_account, self.from_date, self.to_date, condition), as_dict=1)
+		# Ver 2.0 Ends
 		
-		entries = sorted(list(payment_entries)+list(journal_entries), 
+#		direct_payment_entries = frappe.db.sql("""
+#                        select
+#                                "Direct Payment" as payment_document, name as payment_entry,
+#                                cheque_no as cheque_number, cheque_date,
+#                                net_amount as amount,
+#                                posting_date, party as against_account, clearance_date
+#                        from `tabDirect Payment`
+#                        where (debit_account = '{0}' or credit_account = '{1}')
+#                        and docstatus = 1
+#                        and posting_date >= '{2}' and posting_date <= '{3}'
+#                        {4}
+#                """.format(self.bank_account, self.bank_account, self.from_date, self.to_date, condition), as_dict=1)
+
+		entries = sorted(list(payment_entries)+list(journal_entries)+list(hsd_entries)+list(imprest_entries)+list(mechanical_entries)+list(project_entries)+list(direct_payment_entries), 
 			key=lambda k: k['posting_date'] or getdate(nowdate()))
 				
 		self.set('payment_entries', [])

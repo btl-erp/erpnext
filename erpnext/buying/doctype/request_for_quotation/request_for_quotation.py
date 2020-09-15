@@ -14,15 +14,10 @@ from frappe.core.doctype.communication.email import make
 from erpnext.accounts.party import get_party_account_currency, get_party_details
 from erpnext.stock.doctype.material_request.material_request import set_missing_values
 from erpnext.controllers.buying_controller import BuyingController
-from frappe.model.naming import make_autoname
-from erpnext.custom_autoname import get_auto_name
 
 STANDARD_USERS = ("Guest", "Administrator")
 
 class RequestforQuotation(BuyingController):
-	def autoname(self):
-		self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
-
 	def validate(self):
 		self.validate_duplicate_supplier()
 		self.validate_common()
@@ -176,6 +171,9 @@ def make_supplier_quotation(source_name, for_supplier, target_doc=None):
 	doclist = get_mapped_doc("Request for Quotation", source_name, {
 		"Request for Quotation": {
 			"doctype": "Supplier Quotation",
+			"field_map": {
+				"naming_series": "naming_series",
+			},
 			"validation": {
 				"docstatus": ["=", 1]
 			}

@@ -7,12 +7,35 @@
  "doctype": "Report", 
  "idx": 0, 
  "is_standard": "Yes", 
- "modified": "2017-04-20 16:51:05.618573", 
- "modified_by": "Administrator", 
+ "modified": "2018-07-21 12:09:08.404700", 
+ "modified_by": "kinzang.namgyal@cdcl.bt", 
  "module": "Buying", 
  "name": "Asset Balance Report", 
  "owner": "Administrator", 
  "ref_doctype": "Asset Received Entries", 
  "report_name": "Asset Balance Report", 
- "report_type": "Script Report"
+ "report_type": "Script Report", 
+ "roles": [
+  {
+   "role": "Administrator"
+  }, 
+  {
+   "role": "Asset Manager"
+  }, 
+  {
+   "role": "Purchase Manager"
+  }, 
+  {
+   "role": "Asset User"
+  }, 
+  {
+   "role": "Projects User"
+  }, 
+  {
+   "role": "Stock User"
+  }, 
+  {
+   "role": "Stock User (other)"
+  }
+ ]
 }

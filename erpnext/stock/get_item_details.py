@@ -158,7 +158,7 @@ def get_basic_details(args, item):
 		"batch_no": None,
 		"item_tax_rate": json.dumps(dict(([d.tax_type, d.tax_rate] for d in
 			item.get("taxes")))),
-		"uom": item.stock_uom,
+		## DONT POPULATE THE UOM BY DEFAULT"uom": item.stock_uom,
 		"min_order_qty": flt(item.min_order_qty) if args.doctype == "Material Request" else "",
 		"conversion_factor": 1.0,
 		"qty": args.qty or 1.0,
@@ -185,7 +185,7 @@ def get_basic_details(args, item):
 			if not out[d[1]] or (company and args.company != company):
 				out[d[1]] = frappe.db.get_value("Company", args.company, d[2]) if d[2] else None
 
-	for fieldname in ("item_name", "item_group", "barcode", "brand", "stock_uom"):
+	for fieldname in ("item_name", "item_group","item_sub_group", "barcode", "brand", "stock_uom"):
 		out[fieldname] = item.get(fieldname)
 
 	return out
@@ -210,7 +210,8 @@ def get_price_list_rate(args, item_doc, out):
 	meta = frappe.get_meta(args.parenttype or args.doctype)
 
 	if meta.get_field("currency"):
-		validate_price_list(args)
+		#validate price list is commented 
+		#validate_price_list(args)
 		validate_conversion_rate(args, meta)
 
 		price_list_rate = get_price_list_rate_for(args.price_list, item_doc.name)
@@ -234,6 +235,9 @@ def get_price_list_rate(args, item_doc, out):
 				args.name, args.conversion_rate))
 
 def insert_item_price(args):
+	if args.doctype == "Purchase Order":
+		if args.annual_tender:
+			return 
 	"""Insert Item Price if Price List and Price List Rate are specified and currency is the same"""
 	if frappe.db.get_value("Price List", args.price_list, "currency") == args.currency \
 		and cint(frappe.db.get_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing")):
@@ -288,10 +292,10 @@ def validate_conversion_rate(args, meta):
 	args.conversion_rate = flt(args.conversion_rate,
 		get_field_precision(meta.get_field("conversion_rate"),
 			frappe._dict({"fields": args})))
-
 	# validate price list currency conversion rate
 	if not args.get("price_list_currency"):
-		throw(_("Price List Currency not selected"))
+		args.price_list_currency = "BTN" #Added by Thukten due to error while creating PO from MR
+		# throw(_("Price List Currency not selected"))
 	else:
 		validate_conversion_rate(args.price_list_currency, args.plc_conversion_rate,
 			meta.get_label("plc_conversion_rate"), args.company)

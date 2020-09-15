@@ -7,12 +7,17 @@ from frappe.model.mapper import get_mapped_doc
 from frappe import _
 
 from erpnext.controllers.selling_controller import SellingController
+from frappe.model.naming import make_autoname
+from erpnext.custom_autoname import get_auto_name
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
 }
 
 class Quotation(SellingController):
+	def autoname(self):
+		self.name = make_autoname(get_auto_name(self, self.naming_series) + ".####")
+
 	def validate(self):
 		super(Quotation, self).validate()
 		self.set_status()
@@ -21,6 +26,7 @@ class Quotation(SellingController):
 		self.validate_quotation_to()
 		if self.items:
 			self.with_items = 1
+
 
 	def has_sales_order(self):
 		return frappe.db.get_value("Sales Order Item", {"prevdoc_docname": self.name, "docstatus": 1})
@@ -95,6 +101,10 @@ def _make_sales_order(source_name, target_doc=None, ignore_permissions=False):
 	doclist = get_mapped_doc("Quotation", source_name, {
 			"Quotation": {
 				"doctype": "Sales Order",
+				"field_map": {
+					"naming_series": "naming_series",
+					"discount_amount": "discount_or_cost_amount",
+				},
 				"validation": {
 					"docstatus": ["=", 1]
 				}

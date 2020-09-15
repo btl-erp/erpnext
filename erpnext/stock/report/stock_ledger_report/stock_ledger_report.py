@@ -18,8 +18,10 @@ def execute(filters=None):
 
 	for sle in sl_entries:
 		item_detail = item_details[sle.item_code]
+		if sle.voucher_type == "POL":
+			sle.voucher_type = "Receive POL"
 
-		data.append([sle.date, sle.item_code, item_detail.item_name, item_detail.item_group,
+		data.append([sle.date, sle.item_code, item_detail.item_name, item_detail.item_group, item_detail.item_sub_group,
 			sle.warehouse,
 			item_detail.stock_uom, sle.actual_qty, sle.qty_after_transaction,
 			(sle.incoming_rate if sle.actual_qty > 0 else 0.0),
@@ -29,11 +31,11 @@ def execute(filters=None):
 	return columns, data
 
 def get_columns():
-	return [_("Date") + ":Datetime:95", _("Material Code") + ":Link/Item:130", _("Material Name") + "::120", _("Material Group") + ":Link/Item Group:100",
+	return [_("Date") + ":Datetime:95", _("Material Code") + ":Link/Item:130", _("Material Name") + "::120", _("Material Group") + ":Link/Item Group:100", _("Material Sub Group") + ":Link/Item Sub Group:100",
 		_("Warehouse") + ":Link/Warehouse:100",
 		_("Stock UOM") + ":Link/UOM:100", _("Qty") + ":Float:50", _("Balance Qty") + ":Float:100",
 		_("Incoming Rate") + ":Currency:110", _("MAP") + ":Currency:110", _("Balance Value") + ":Currency:110",
-		_("Transaction Type") + "::110", _("Transaction No.") + ":Dynamic Link/"+_("Voucher Type")+":100", _("Vehicle No") + ":Data:100", _("Transporter") + ":Data:100", _("Company") + ":Link/Company:100"
+		_("Transaction Type") + "::110", _("Transaction No.") + ":Dynamic Link/"+_("Transaction Type")+":100", _("Vehicle No") + ":Data:100", _("Transporter") + ":Data:100", _("Company") + ":Link/Company:100"
 	]
 
 def get_stock_ledger_entries(filters):
@@ -51,11 +53,10 @@ def get_stock_ledger_entries(filters):
 
 def get_item_details(filters):
 	item_details = {}
-	for item in frappe.db.sql("""select name, item_name, description, item_group,
+	for item in frappe.db.sql("""select name, item_name, description, item_group, item_sub_group,
 			brand, stock_uom from `tabItem` {item_conditions}"""\
 			.format(item_conditions=get_item_conditions(filters)), filters, as_dict=1):
 		item_details.setdefault(item.name, item)
-
 	return item_details
 
 def get_item_conditions(filters):

@@ -4,7 +4,7 @@
 from __future__ import unicode_literals
 import frappe
 from frappe.utils import cint, cstr, date_diff, flt, formatdate, getdate, get_link_to_form, \
-	comma_or, get_fullname, nowdate, money_in_words
+	comma_or, get_fullname, nowdate, money_in_words, today
 from frappe import msgprint, _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
@@ -13,6 +13,7 @@ from datetime import *
 from erpnext.hr.doctype.salary_structure.salary_structure import get_salary_tax
 from erpnext.accounts.doctype.journal_entry.journal_entry import get_default_bank_cash_account
 #from dateutil.relativedelta import *
+from erpnext.hr.doctype.leave_application.leave_application import get_leave_balance_on
 
 class OverlapError(frappe.ValidationError): pass
 class InsufficientError(frappe.ValidationError): pass
@@ -28,22 +29,49 @@ class LeaveEncashment(Document):
                 self.name = make_autoname(self.employee+"/LE/"+monthyear+"/.#####")
         
         def validate(self):
+		#self.branch = frappe.db.get_value("Employee", self.employee, "branch")         #Commented by SHIV on 2018/10/15
                 self.validate_leave_application()
-                self.validate_balances()
+                self.get_leave_balance()                                                        #Added by SHIV on 2018/10/15
+                self.validate_balances()                                                        #Commented by SHIV on 2018/10/12
                 
         def on_submit(self):
+		self.adjust_leave()
 		self.post_accounts_entry()
 
 	def before_cancel(self):
 		self.check_gl_entry()
-	
+
+	def on_cancel(self):
+                self.adjust_leave(True)	
+
 	def get_leave_credits(self):
                 pass
+
+	def adjust_leave(self, cancel=False):
+                leave_allocation = frappe.db.sql("""
+                        select name, from_date, to_date, total_leaves_allocated
+                        from `tabLeave Allocation`
+                        where employee=%s and leave_type=%s and docstatus=1 
+                        order by to_date desc limit 1
+                """, (self.employee, self.leave_type), as_dict=1)
+                if leave_allocation:
+                        doc = frappe.get_doc("Leave Allocation", leave_allocation[0].name)
+                        if cancel:
+                                new_total = (flt(doc.total_leaves_allocated) + flt(self.encashed_days))
+                                days = flt(self.encashed_days)
+                                self.db_set("leave_adjusted", 0)
+                        else:
+                                new_total = (flt(doc.total_leaves_allocated) - flt(self.encashed_days))
+                                days = 0 - flt(self.encashed_days)
+                                self.db_set("leave_adjusted", 1)
+                        doc.db_set("total_leaves_allocated", new_total)
+                        doc.db_set("leave_encashment", self.name)
+                        doc.db_set("encashed_days", days)
 	
 	def check_gl_entry(self):
 		if self.encash_journal:
 			docstat = frappe.db.get_value("Journal Entry", self.encash_journal, "docstatus")
-			if docstat == 1:
+			if docstat != 2:
 				frappe.throw("You cannot cancel this document without cancelling the journal entry")
 
 
@@ -67,17 +95,16 @@ class LeaveEncashment(Document):
 
         def validate_balances(self):
                 msg = ''
-                #le = get_le_settings(["encashment_days","encashment_min","encashment_lapse"])
-                le = get_le_settings()
-               
-                if flt(self.balance_before if self.balance_before else 0) < flt(le.encashment_min if le.encashment_min else 0):
+                #le = get_le_settings()                                                                         # Line commented by SHIV on 2018/10/15
+                le = frappe.get_doc("Employee Group",frappe.db.get_value("Employee",self.employee,"employee_group")) # Line added by SHIV on 2018/10/15
+                if flt(self.balance_before) < flt(le.encashment_min):
                         msg = "Minimum leave balance {0} required to encash.".format(le.encashment_min)
-                elif flt(self.balance_after if self.balance_after else 0.00) < 0.00:
-                        msg = "Insufficient Leave Balance"
+
+                if flt(self.balance_after) < 0:
+                        msg = "Insufficient leave balance"
 
                 if msg:
-                      #frappe.throw(_("{0}").format(msg), InsufficientError)
-                      frappe.throw(_("{0}").format(msg))  
+                      frappe.throw(_("{0}").format(msg), InsufficientError)
 
         def get_current_year_dates(self):
                 from_date = date(date.today().year,1,1).strftime('%Y-%m-%d')
@@ -99,13 +126,54 @@ class LeaveEncashment(Document):
                         frappe.throw(_("No Active Salary Structure found for the employee."))
                         
                 return salary_struc_list[0][0]
+
+        # Following method created by SHIV on 2018/10/12
+        def update_employee_details(self):
+                self.encashed_days      = 0
+                self.balance_before     = 0
+                self.balance_after      = 0
+
+                if self.employee:                
+                        doc = frappe.get_doc("Employee", self.employee)
+                        self.employee_name      = doc.employee_name
+                        self.employment_type    = doc.employment_type
+                        self.employee_group     = doc.employee_group
+                        self.employee_subgroup  = doc.employee_subgroup
+                        self.branch             = doc.branch
+                        self.cost_center        = doc.cost_center
+                        self.department         = doc.department
+                        self.division           = doc.division
+                        self.section            = doc.section
+                                
+        # Following method created by SHIV on 2018/10/12
+        def get_leave_balance(self):
+                self.update_employee_details()
+                if self.employee:
+                        group_doc = frappe.get_doc("Employee Group", self.employee_group)
+                        self.encashed_days  = group_doc.encashment_days
+                        self.balance_before = get_leave_balance_on(self.employee, self.leave_type, today())
+                        self.balance_after  = flt(self.balance_before) - flt(self.encashed_days)
         
         def post_accounts_entry(self):
                 employee = frappe.get_doc("Employee", self.employee)
-                default_bank_cash_account = get_default_bank_cash_account(employee.company, "Bank")
+
+		cost_center = employee.cost_center
+		if not cost_center:
+			frappe.throw("Setup Cost Center for employee in Employee Information")
+
+		expense_bank_account = frappe.db.get_value("Branch", self.branch, "expense_bank_account")
+		if not expense_bank_account:
+			frappe.throw("Setup Default Expense Bank Account for your Branch")
+
+		expense_account = frappe.db.get_single_value("HR Accounts Settings", "leave_encashment_account")
+		if not expense_account:
+			frappe.throw("Setup Leave Encashment Accounts in HR Accounts Settings")
+
+		tax_account = frappe.db.get_single_value("HR Accounts Settings", "salary_tax_account")
+		if not tax_account:
+			frappe.throw("Setup Leave Tax Accounts in HR Accounts Settings")
+
                 sal_struc_name = self.get_salary_structure()
-                #le = get_le_settings(["expense_account", "tax_account"])
-                le = get_le_settings()
                 if sal_struc_name:
                         sal_struc= frappe.get_doc("Salary Structure",sal_struc_name)
                         for d in sal_struc.earnings:
@@ -125,79 +193,60 @@ class LeaveEncashment(Document):
                 je.voucher_type = 'Bank Entry'
                 je.naming_series = 'Bank Payment Voucher'
                 je.company = employee.company
+		je.branch = self.branch
                 je.remark = 'Payment against Leave Encashment: ' + self.name;
                 je.posting_date = self.application_date
                 je.total_amount_in_words =  money_in_words(flt(basic_pay)-flt(salary_tax))
 
                 je.append("accounts", {
-                        "account": le.expense_account,
+                        "account": expense_account,
                         "debit_in_account_currency": flt(basic_pay),
+                        "debit": flt(basic_pay),
                         "reference_type": "Leave Encashment",
                         "reference_name": self.name,
-                        #"party_type": "Employee",
-                        #"party": self.employee,
-                        "cost_center": self.cost_center,
-                        "party_check": 0
+                        "cost_center": cost_center,
+			"business_activity": employee.business_activity,
                 })
 
                 je.append("accounts", {
-                        "account": le.tax_account,
+                        "account": tax_account,
                         "credit_in_account_currency": flt(salary_tax),
+                        "credit": flt(salary_tax),
                         "reference_type": "Leave Encashment",
                         "reference_name": self.name,
-                        #"party_type": "Employee",
-                        #"party": self.employee,
-                        "cost_center": self.cost_center,
-                        "party_check": 0
+                        "cost_center": cost_center,
+			"business_activity": employee.business_activity,
                 })
 
                 je.append("accounts", {
-                        "account": "Sundry Creditors - Employee - SMCL",
-                        "debit_in_account_currency": flt(basic_pay),
-                        "reference_type": "Leave Encashment",
-                        "reference_name": self.name,
-                        "party_type": "Employee",
-                        "party": self.employee,
-                        "cost_center": self.cost_center,
-                        "party_check": 0
-                })
-
-                je.append("accounts", {
-                        "account": "Sundry Creditors - Employee - SMCL",
-                        "credit_in_account_currency": flt(basic_pay),
-                        "reference_type": "Leave Encashment",
-                        "reference_name": self.name,
-                        "party_type": "Employee",
-                        "party": self.employee,
-                        "cost_center": self.cost_center,
-                        "party_check": 0
-                })
-
-                je.append("accounts", {
-                        "account": default_bank_cash_account.account,
+                        "account": expense_bank_account,
                         "credit_in_account_currency": (flt(basic_pay)-flt(salary_tax)),
+                        "credit": (flt(basic_pay)-flt(salary_tax)),
                         "reference_type": "Leave Encashment",
                         "reference_name": self.name,
-                        "balance": default_bank_cash_account.balance,
-                        "account_currency": default_bank_cash_account.account_currency,
-                        "account_type": default_bank_cash_account.account_type,
-                        "cost_center": self.cost_center
+			"business_activity": employee.business_activity,
+                        "cost_center": cost_center
                 })
                 je.insert()
 
 		self.db_set("encash_journal", je.name)
 		self.db_set("encashment_amount", flt(basic_pay))
 		self.db_set("tax_amount", flt(salary_tax))
-                
+
+# Following code commented by SHIV on 2018/10/12
+'''
 @frappe.whitelist()
-def get_employee_cost_center(division):
-        #cost_center = frappe.db.get_value("Division", division, "cost_center")
-        division = frappe.get_doc("Division", division)
-        return division.cost_center
+def get_employee_cost_center(emp):
+        cost_center = frappe.db.get_value("Employee", emp, "cost_center")
+	if not cost_center:
+		frappe.throw("No Cost Center has been assigned to the Employee")
+	return cost_center
 
 @frappe.whitelist()                        
 def get_le_settings(*arg, **kwargs):
         le = frappe.db.get_value("Leave Encashment Settings", filters = None, \
-                        fieldname = ["encashment_days","encashment_min","encashment_lapse","expense_account","tax_account"], as_dict = True)
+                        fieldname = ["encashment_days","encashment_min","encashment_lapse"], as_dict = True)
         
         return le
+
+'''

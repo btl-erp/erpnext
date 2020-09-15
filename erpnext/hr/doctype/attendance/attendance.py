@@ -30,6 +30,8 @@ class Attendance(Document):
 					self.att_date))
 
 	def validate_att_date(self):
+		if self.reference_name:
+			return
 		if getdate(self.att_date) > getdate(nowdate()):
 			frappe.throw(_("Attendance can not be marked for future dates"))
 
@@ -41,13 +43,18 @@ class Attendance(Document):
 
 	def validate(self):
 		from erpnext.controllers.status_updater import validate_status
-		validate_status(self.status, ["Present", "Absent", "Half Day", "Tour"])
+		validate_status(self.status, ["Present", "Absent", "Half Day", "Tour", "Leave"])
 		self.validate_att_date()
 		self.validate_duplicate_record()
 		self.check_leave_record()
+		self.branch = frappe.db.get_value("Employee", self.employee, "branch")
 
 	def on_update(self):
 		# this is done because sometimes user entered wrong employee name
 		# while uploading employee attendance
-		employee_name = frappe.db.get_value("Employee", self.employee, "employee_name")
+		employee_name, branch = frappe.db.get_value("Employee", self.employee, ["employee_name", "branch"])
 		frappe.db.set(self, 'employee_name', employee_name)
+		frappe.db.set(self, 'branch', branch)
+
+	def on_submit(self):
+		self.db_set("branch", frappe.db.get_value("Employee", self.employee, "branch"))

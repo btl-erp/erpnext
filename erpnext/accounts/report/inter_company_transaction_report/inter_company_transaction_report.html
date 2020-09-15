@@ -1,0 +1,86 @@
+<h4 class="text-center">{%= filters.company %} 
+{% if (!is_null(filters.branch)) { %}
+	- {%= filters.branch %}
+{% } %}
+<h4>
+<h4 class="text-center">DHI Company Report</h4>
+<p class="text-center">{%= filters.start_date %} to {%= filters.end_date %}</p>
+<p class="text-center">({%= filters.party %})</p>
+<table class="table table-bordered">
+        <thead>
+                <tr>
+                        {% for(var i=1, l=report.columns.length; i<l; i++) { %}
+                                <th class="text-right">{%= report.columns[i].label %}</th>
+                        {% } %}
+                </tr>
+        </thead>
+	 <tbody>
+		{% for(var i=0, l=data.length; i<l; i++) { %}
+			<tr>
+			    <td>{%= data[i][__("Reference")] %}</td>
+			    <td>{%= data[i][__("Reference No")] %}</td>
+			    <td>{%= data[i][__("Sales Inv. No.")] %}</td>
+			    <td>{%= data[i][__("Sales Inv. Date")] %}</td>
+			    <td>{% if(!is_null(data[i][__("Sales Amount")])) { %}
+					{%= format_currency(data[i][__("Sales Amount")],data[i]["currency"]) %}
+				{% } %}	
+			    </td>
+			    <td>{% if(!is_null(data[i][__("Received")])) { %}
+					  {%= format_currency(data[i][__("Received")],data[i]["currency"]) %}
+				{% } %}
+			    </td>
+			    <td>{% if(!is_null(data[i][__("Receivable")])) { %}
+					{%= format_currency(data[i][__("Receivable")],data[i]["currency"]) %}
+			     {% } %}
+			    </td>
+			    <td>{% if(!is_null(data[i][__("Payment Inv. No")])) { %}
+					{%= data[i][__("Payment Inv. No")] %}
+				 {% } %}
+			    </td>
+			    <td>{% if(!is_null(data[i][__("Inv. Date")])) { %}
+					{%= data[i][__("Inv. Date")] %}
+				 {% } %}
+			    </td>
+			    <td>{% if(!is_null(data[i][__("Payment Amount")])) { %}
+					{%= format_currency(data[i][__("Payment Amount")],data[i]["currency"]) %}
+				 {% } %}
+			    </td>
+			    <td>{% if(!is_null(data[i][__("Paid")])) { %}
+					{%= format_currency(data[i][__("Paid")],data[i]["currency"]) %}
+				 {% } %}
+			    </td>
+			    <td>{% if(!is_null(data[i][__("Payable")])) { %}
+					{%= format_currency(data[i][__("Payable")],data[i]["currency"]) %}
+				 {% } %}
+			    </td>
+			    <td>{% if(!is_null(data[i][__("Advance Received")])) { %}
+					{%= format_currency(data[i][__("Advance Received")],data[i]["currency"]) %}
+				 {% } %}
+			    </td>
+			    <td>{% if(!is_null(data[i][__("Rec. Adjusted")])) { %}
+					    {%= format_currency(data[i][__("Rec. Adjusted")],data[i]["currency"]) %}
+			        {% } %}
+			   	</td>
+			   	<td>{% if(!is_null(data[i][__("Rec. Balance")])) { %}
+					    {%= format_currency(data[i][__("Rec. Balance")],data[i]["currency"]) %}
+			    	 {% } %}
+			   	</td>
+			   	<td>{% if(!is_null(data[i][__("Advance Paid")])) { %}
+					    {%= format_currency(data[i][__("Advance Paid")],data[i]["currency"]) %}
+				     {% } %}
+			   	</td>
+
+				<td>{% if(!is_null(data[i][__("Pay. Adjusted")])) { %}
+				    {%= format_currency(data[i][__("Pay. Adjusted")],data[i]["currency"]) %}
+			     	{% } %}
+				</td>
+				<td>{% if(!is_null(data[i][__("Pay. Balance")])) { %}
+				    {%= format_currency(data[i][__("Pay. Balance")],data[i]["currency"]) %}
+			     	{% } %}
+				</td>
+			</tr>
+		{% } %}
+        </tbody>
+</table>
+
+<p class="text-right text-muted">Printed On {%= dateutil.str_to_user(dateutil.get_datetime_as_string()) %} by {%= frappe.session.user %}</p>

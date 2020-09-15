@@ -69,6 +69,7 @@ erpnext.TransactionController = erpnext.taxes_and_totals.extend({
 				// Reset discount amount and net / grand total
 				frm.set_value("discount_amount", 0);
 			}
+			
 
 			var total = flt(frm.doc[frappe.model.scrub(frm.doc.apply_discount_on)]);
 			var discount_amount = flt(total*flt(frm.doc.additional_discount_percentage) / 100,
@@ -216,7 +217,6 @@ erpnext.TransactionController = erpnext.taxes_and_totals.extend({
 	item_code: function(doc, cdt, cdn, from_barcode) {
 		var me = this;
 		var item = frappe.get_doc(cdt, cdn);
-
 		// clear barcode if setting item (else barcode will take priority)
 		if(!from_barcode) {
 			item.barcode = null;
@@ -571,7 +571,8 @@ erpnext.TransactionController = erpnext.taxes_and_totals.extend({
 
 		setup_field_label_map(["total", "net_total", "total_taxes_and_charges", "discount_amount",
 			"grand_total", "taxes_and_charges_added", "taxes_and_charges_deducted",
-			"rounded_total", "in_words", "paid_amount", "write_off_amount"], this.frm.doc.currency);
+			"rounded_total", "in_words", "paid_amount", "write_off_amount", "discount",
+                        "tax", "other_charges", "total_add_ded", "freight_and_insurance_charges"], this.frm.doc.currency);
 
 		setup_field_label_map(["outstanding_amount", "total_advance"], this.frm.doc.party_account_currency);
 

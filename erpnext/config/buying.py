@@ -4,7 +4,7 @@ from frappe import _
 def get_data():
 	return [
 		{
-			"label": _("Buying Transaction"),
+			"label": _("Transactions"),
 			"icon": "icon-star",
 			"items": [
 				{
@@ -46,7 +46,7 @@ def get_data():
 			]
 		},
 		{
-			"label": _("Buying - Master"),
+			"label": _("Master Data"),
 			"items": [
 				{
 					"type": "doctype",
@@ -62,24 +62,20 @@ def get_data():
 				},
 				{
 					"type": "doctype",
-					"name": "Contact",
-					"description": _("All Contacts."),
-				},
-				{
-					"type": "doctype",
-					"name": "Address",
-					"description": _("All Addresses."),
-				},
-				{
-					"type": "doctype",
 					"name":"Terms and Conditions",
 					"label": _("Purchase Terms and Conditions Template"),
 					"description": _("Template of terms or contract.")
-				}
+				},
+				{
+					"type": "doctype",
+					"name": "Annual Tender",
+					"label": "Annual Tender",
+					"description": _("Supplier Type master.")
+				},
 			]
 		},
 		{
-			"label": _("Buying - Reports"),
+			"label": _("Reports"),
 			"icon": "icon-list",
 			"items": [
 				{
@@ -99,12 +95,6 @@ def get_data():
 					"is_query_report": True,
 					"name": "Material Purchase History",
 					"doctype": "Item"
-				},
-				{
-					"type": "report",
-					"is_query_report": True,
-					"name": "Vendor Addresses",
-					"doctype": "Supplier"
 				},
 				{
 					"type": "report",
@@ -133,12 +123,6 @@ def get_data():
 				{
 					"type": "report",
 					"is_query_report": True,
-					"name": "Purchase Penalty Report",
-					"doctype": "Purchase Invoice"
-				},
-				{
-					"type": "report",
-					"is_query_report": True,
 					"name": "Asset Issue Report",
 					"doctype": "Asset Issue Details"
 				},
@@ -147,6 +131,29 @@ def get_data():
 					"is_query_report": True,
 					"name": "Asset Balance Report",
 					"doctype": "Asset Received Entries"
+				},
+				{
+					"type": "report",
+					"is_query_report": True,
+					"name": "Registered Vendors",
+					"doctype": "Supplier"
+				},
+				{
+					"type": "page",
+					"name": "purchase-analytics",
+					"label": "Purchase Analytics"
+				},
+				{
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "MR Status Report",
+                                        "doctype": "Material Request"
+                                },
+				{
+					"type": "report",
+					"name": "Advance Report",
+					"doctype": "Payment Entry",
+					"is_query_report": True,
 				},
 			]
 		},
@@ -166,6 +173,12 @@ def get_data():
 					"label": _("Material Group"),
 					"link": "Tree/Item Group",
 					"description": _("Tree of Item Groups."),
+				},
+				{
+					"type": "doctype",
+					"name": "Item Sub Group",
+					"label": _("Material Sub Group"),
+					"description": _("Item Sub Groups."),
 				},
 				{
 					"type": "doctype",

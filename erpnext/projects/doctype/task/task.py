@@ -1,17 +1,39 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
+'''
+--------------------------------------------------------------------------------------------------------------------------
+Version          Author          CreatedOn          ModifiedOn          Remarks
+------------ --------------- ------------------ -------------------  -----------------------------------------------------
+1.0		  SHIV		                   2017/08/16         "percent_complete", "target_quantity_complete"
+                                                                        created.
+--------------------------------------------------------------------------------------------------------------------------                                                                          
+'''
 
 from __future__ import unicode_literals
 import frappe, json
 
-from frappe.utils import getdate, date_diff, add_days, cstr
+from frappe.utils import getdate, date_diff, add_days, cstr, today
 from frappe import _
 
 from frappe.model.document import Document
 
+# Autonaming is changed, SHIV on 23/10/2017
+from frappe.model.naming import make_autoname
+
 class CircularReferenceError(frappe.ValidationError): pass
 
 class Task(Document):
+        def autoname(self):
+                cur_year  = str(today())[0:4]
+                cur_month = str(today())[5:7]
+                if self.project:
+                        serialno  = make_autoname("TSK" + self.project[-4:] + ".####")
+                        #self.name = serialno[0:3] + cur_year + cur_month + serialno[3:]
+                else:
+                        serialno  = make_autoname("TSK.YY.MM.####")
+
+                self.name = serialno
+                
 	def get_feed(self):
 		return '{0}: {1}'.format(_(self.status), self.subject)
 
@@ -29,6 +51,10 @@ class Task(Document):
 	def validate(self):
 		self.validate_dates()
 		self.validate_status()
+		# ++++++++++++++++++++ Ver 1.0 BEGINS ++++++++++++++++++++
+		# Following method created by SHIV on 2017/08/18
+		self.set_defaults()
+		# +++++++++++++++++++++ Ver 1.0 ENDS +++++++++++++++++++++
 
 	def validate_dates(self):
 		if self.exp_start_date and self.exp_end_date and getdate(self.exp_start_date) > getdate(self.exp_end_date):
@@ -46,6 +72,23 @@ class Task(Document):
 			from frappe.desk.form.assign_to import clear
 			clear(self.doctype, self.name)
 
+        # ++++++++++++++++++++ Ver 1.0 BEGINS ++++++++++++++++++++
+        # Following method created by SHIV on 2017/08/18
+        def set_defaults(self):
+                if not self.target_uom:
+                        self.target_uom = 'Percent'
+                        if not self.target_quantity:
+                                self.target_quantity = 100
+
+                if self.project:
+                        base_project    = frappe.get_doc("Project", self.project)
+                        self.branch     = base_project.branch
+                        self.cost_center= base_project.cost_center
+
+                        if base_project.status in ('Completed','Cancelled'):
+                                frappe.throw(_("Operation not permitted on already {0} Project.").format(base_project.status),title="Task: Invalid Operation")
+        # +++++++++++++++++++++ Ver 1.0 ENDS +++++++++++++++++++++
+        
 	def on_update(self):
 		self.check_recursion()
 		self.reschedule_dependent_tasks()
@@ -60,6 +103,7 @@ class Task(Document):
 			sum(billing_amount) as total_billing_amount, sum(costing_amount) as total_costing_amount,
 			sum(hours) as time from `tabTimesheet Detail` where task = %s and docstatus=1"""
 			,self.name, as_dict=1)[0]
+                
 		if self.status == "Open":
 			self.status = "Working"
 		self.total_costing_amount= tl.total_costing_amount

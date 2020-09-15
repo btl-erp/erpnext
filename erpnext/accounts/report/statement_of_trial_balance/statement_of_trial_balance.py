@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import flt, getdate, formatdate, cstr, rounded
 from erpnext.accounts.report.financial_statements_emines \
 	import filter_accounts, set_gl_entries_by_account, filter_out_zero_value_rows
+from erpnext.accounts.accounts_custom_functions import get_child_cost_centers
 
 value_fields = ("opening_debit", "opening_credit", "debit", "credit", "closing_debit", "closing_credit")
 
@@ -52,22 +53,21 @@ def validate_filters(filters):
 		filters.to_date = filters.year_end_date
 
 def get_data(filters):
-	accounts = frappe.db.sql("""select name, parent_account, account_name, root_type, report_type, lft, rgt
+	accounts = frappe.db.sql("""select name, account_code, parent_account, account_name, root_type, report_type, lft, rgt
 		from `tabAccount` where company=%s order by lft""", filters.company, as_dict=True)
 
 	if not accounts:
 		return None
 
 	accounts, accounts_by_name, parent_children_map = filter_accounts(accounts)
-
 	min_lft, max_rgt = frappe.db.sql("""select min(lft), max(rgt) from `tabAccount`
 		where company=%s""", (filters.company,))[0]
 
 	gl_entries_by_account = {}
 
-	set_gl_entries_by_account(filters.cost_center, filters.company, filters.from_date,
+	#added the parameter filters.business_activity, returns gl_entries_by_account
+	set_gl_entries_by_account(filters.cost_center, filters.business_activity, filters.company, filters.from_date,
 		filters.to_date, min_lft, max_rgt, gl_entries_by_account, ignore_closing_entries=not flt(filters.with_period_closing_entry))
-
 	opening_balances = get_opening_balances(filters)
 
 	total_row = calculate_values(accounts, gl_entries_by_account, opening_balances, filters)
@@ -89,17 +89,30 @@ def get_opening_balances(filters):
 
 def get_rootwise_opening_balances(filters, report_type):
 	additional_conditions = " and posting_date >= %(year_start_date)s" \
-		if report_type == "Profit and Loss" else ""
+		if report_type == "Profit and Loss" else " "
 
 	if not flt(filters.with_period_closing_entry):
 		additional_conditions += " and ifnull(voucher_type, '')!='Period Closing Voucher'"
 
+	 #added business_activity filter
+	if filters.business_activity:
+                additional_conditions += " and business_activity = '{0}'".format(filters.business_activity)
+        else:
+                additional_conditions += " and 1 = 1 "
+	
+    	if filters.cost_center:
+		cost_centers = get_child_cost_centers(filters.cost_center)
+       		additional_conditions += " and cost_center IN %(cost_center)s"
+    
+	else:
+		cost_centers = filters.cost_center 
+	
 	gle = frappe.db.sql("""
 		select
 			account, sum(debit) as opening_debit, sum(credit) as opening_credit
 		from `tabGL Entry`
 		where
-			company=%(company)s 
+			company=%(company)s
 			{additional_conditions}
 			and (posting_date < %(from_date)s or ifnull(is_opening, 'No') = 'Yes')
 			and account in (select name from `tabAccount` where report_type=%(report_type)s)
@@ -108,14 +121,14 @@ def get_rootwise_opening_balances(filters, report_type):
 			"company": filters.company,
 			"from_date": filters.from_date,
 			"report_type": report_type,
-			"year_start_date": filters.year_start_date
+			"year_start_date": filters.year_start_date,
+                        "cost_center": cost_centers
 		},
-		as_dict=True)
+		as_dict=True, debug = 0)
 
 	opening = frappe._dict()
 	for d in gle:
 		opening.setdefault(d.account, d)
-
 	return opening
 
 def calculate_values(accounts, gl_entries_by_account, opening_balances, filters):
@@ -132,8 +145,12 @@ def calculate_values(accounts, gl_entries_by_account, opening_balances, filters)
 		"account": None,
 		"account_name": _("Total"),
 		"warn_if_negative": True,
+		"opening_debit": 0.0,
+		"opening_credit": 0.0,
 		"debit": 0.0,
-		"credit": 0.0
+		"credit": 0.0,
+		"closing_debit": 0.0,
+		"closing_credit": 0.0
 	}
 
 	for d in accounts:
@@ -151,7 +168,6 @@ def calculate_values(accounts, gl_entries_by_account, opening_balances, filters)
 		total_row["debit"] += d["debit"]
 		total_row["credit"] += d["credit"]
 
-
 	return total_row
 
 def accumulate_values_into_parents(accounts, accounts_by_name):
@@ -165,6 +181,7 @@ def prepare_data(accounts, filters, total_row, parent_children_map):
 	for d in accounts:
 		has_value = False
 		row = {
+			"account_code": d.account_code,
 			"account_name": d.account_name,
 			"account": d.name,
 			"parent_account": d.parent_account,
@@ -173,7 +190,7 @@ def prepare_data(accounts, filters, total_row, parent_children_map):
 			"to_date": filters.to_date
 		}
 
-		prepare_opening_and_closing(d)
+		prepare_opening_and_closing(d, total_row)
 
 		for key in value_fields:
 			row[key] = flt(d.get(key, 0.0), 3)
@@ -197,6 +214,12 @@ def get_columns():
 			"fieldtype": "Link",
 			"options": "Account",
 			"width": 300
+		},
+		{
+			"fieldname": "account_code",
+			"label": _("Account Code"),
+			"fieldtype": "Data",
+			"width": 100
 		},
 		{
 			"fieldname": "opening_debit",
@@ -236,7 +259,7 @@ def get_columns():
 		}
 	]
 
-def prepare_opening_and_closing(d):
+def prepare_opening_and_closing(d, total_row):
 	d["closing_debit"] = d["opening_debit"] + d["debit"]
 	d["closing_credit"] = d["opening_credit"] + d["credit"]
 
@@ -255,3 +278,10 @@ def prepare_opening_and_closing(d):
 	else:
 		d["opening_credit"] -= d["opening_debit"]
 		d["opening_debit"] = 0.0
+
+	if str(d.account_name.encode('utf-8')) in ["Assets", "Liabilities", "Equity", "Revenue", "Expenses"]:
+                total_row['opening_credit'] = total_row['opening_credit'] + d['opening_credit']
+                total_row['opening_debit'] = total_row['opening_debit'] + d['opening_debit']
+                total_row['closing_credit'] = total_row['closing_credit'] + d['closing_credit']
+                total_row['closing_debit'] = total_row['closing_debit'] + d['closing_debit']
+

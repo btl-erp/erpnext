@@ -7,12 +7,44 @@
  "doctype": "Report", 
  "idx": 0, 
  "is_standard": "Yes", 
- "modified": "2016-05-26 15:29:35.619046", 
+ "modified": "2018-11-28 14:15:16.351895", 
  "modified_by": "Administrator", 
  "module": "Stock", 
  "name": "Stock Balance Report", 
  "owner": "Administrator", 
  "ref_doctype": "Stock Ledger Entry", 
  "report_name": "Stock Balance Report", 
- "report_type": "Script Report"
+ "report_type": "Script Report", 
+ "roles": [
+  {
+   "role": "Administrator"
+  }, 
+  {
+   "role": "Stock Manager"
+  }, 
+  {
+   "role": "Stock User"
+  }, 
+  {
+   "role": "Stock User (other)"
+  }, 
+  {
+   "role": "Purchase Master"
+  }, 
+  {
+   "role": "Management"
+  }, 
+  {
+   "role": "Workshop Manager"
+  }, 
+  {
+   "role": "Auditor"
+  }, 
+  {
+   "role": "POL User"
+  }, 
+  {
+   "role": "Unit Manager"
+  }
+ ]
 }

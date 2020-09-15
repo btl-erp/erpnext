@@ -4,7 +4,7 @@ from frappe import _
 def get_data():
 	return [
 		{
-			"label": _("Selling - Transactions"),
+			"label": _("Transactions"),
 			"icon": "icon-star",
 			"items": [
 				{
@@ -13,6 +13,7 @@ def get_data():
 					"label": "Sales Quotation",
 					"description": _("Quotes to Leads or Customers."),
 				},
+
 				{
 					"type": "doctype",
 					"name": "Sales Order",
@@ -28,20 +29,10 @@ def get_data():
 					"name": "Sales Invoice",
 					"description": _("Bills raised to Customers.")
 				},
-				{
-					"type": "doctype",
-					"name": "Mines Quality Record",
-					"description": _("Mines Quality Record Details")
-				},
-				{
-					"type": "doctype",
-					"name": "Consolidated Invoice",
-					"description": _("Consolidated Invoices Details")
-				}
 			]
 		},
 		{
-			"label": _("Selling Master"),
+			"label": _("Master Data"),
 			"items": [
 				{
 					"type": "doctype",
@@ -58,16 +49,6 @@ def get_data():
 				},
 				{
 					"type": "doctype",
-					"name": "Contact",
-					"description": _("All Contacts."),
-				},
-				{
-					"type": "doctype",
-					"name": "Address",
-					"description": _("All Addresses."),
-				},
-				{
-					"type": "doctype",
 					"name":"Terms and Conditions",
 					"label": _("Sales Terms and Conditions Template"),
 					"description": _("Template of terms or contract.")
@@ -76,26 +57,31 @@ def get_data():
 					"type": "doctype",
 					"name": "Loss Tolerance",
 					"description": _("Loss Tolerance Setting"),
+				},
+				{
+					"type": "doctype",
+					"name": "Transportation Rate",
 				}
 			]
 		},
 		{
-			"label": _("Selling Reports"),
+			"label": _("Reports"),
 			"icon": "icon-list",
 			"items": [
+				#{
+				#	"type": "report",
+				#	"is_query_report": True,
+				#	"name": "Material-wise Sales History",
+				#	"doctype": "Item",
+				#	"label": "Materialwise Sales History"
+				#},
 				{
-					"type": "report",
-					"is_query_report": True,
-					"name": "Mines Delivery Overview",
-					"doctype": "Delivery Note"
-				},
-				{
-					"type": "report",
-					"is_query_report": True,
-					"name": "Material-wise Sales History",
-					"doctype": "Item",
-					"label": "Materialwise Sales History"
-				},
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "Sales Report",
+                                        "label": "Sales Report",
+                                        "doctype": "Sales Order"
+                                },
 				{
 					"type": "report",
 					"is_query_report": True,
@@ -118,27 +104,54 @@ def get_data():
 				{
 					"type": "report",
 					"is_query_report": True,
-					"name": "Transportation Report",
-					"doctype": "Delivery Note"
-				},
-				{
-					"type": "report",
-					"is_query_report": True,
-					"name": "Mines Product Quality Report",
-					"doctype": "Mines Quality Record"
-				},
-				{
-					"type": "report",
-					"is_query_report": True,
 					"name": "Ordered Materials To Be Delivered",
 					"doctype": "Delivery Note"
 				},
 				{
 					"type": "report",
+					"name": "Accounts Receivable",
+					"label": "Invoice Receivable",
+					"doctype": "Sales Invoice",
+					"is_query_report": True
+				},
+				{
+					"type": "report",
+					"name": "Stock Price History",
+					"doctype": "Stock Price Template",
+					"is_query_report": True
+				},
+				{
+					"type": "page",
+					"name": "sales-analytics",
+					"label": "Sales Analytics"
+				},
+				{
+					"type": "report",
+					"name": "Advance Report",
+					"doctype": "Payment Entry",
 					"is_query_report": True,
-					"name": "Sales Penalty Report",
-					"doctype": "Sales Invoice"
-				}
+				},
+				
+				{
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "Timber Allotment To AWBI",
+                                        "label": "Timber Allotment Report",
+                                        "doctype": "Product Requisition"
+                                },
+				{
+                                        "type": "report",
+                                        "is_query_report": True,
+                                        "name": "Customer Group Report",
+                                        "label": "Customer Group Wise Sales Report",
+                                        "doctype": "Sales Invoice"
+                                },
+				{
+                                        "type": "report",
+					"name": "General Sales Order Report",
+                                        "doctype": "Sales Order"
+                                },
+
 			]
 		},
 		{
@@ -160,9 +173,20 @@ def get_data():
 				},
 				{
 					"type": "doctype",
+					"name": "Item Sub Group",
+					"label": _("Material Sub Group"),
+					"description": _("Item Sub Groups."),
+				},
+				{
+					"type": "doctype",
 					"name": "Material Price",
 					"description": _("Multiple Item prices."),
 					"route": "Report/Item Price"
+				},
+				{
+					"type" : "doctype",
+					"name": "Selling Price",
+					"label": _("Selling Price Settings"),
 				},
 			]
 		},

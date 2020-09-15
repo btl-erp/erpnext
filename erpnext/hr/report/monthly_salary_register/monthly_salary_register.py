@@ -16,12 +16,16 @@ from frappe import msgprint, _
 def execute(filters=None):
 	if not filters: filters = {}
 	
-	salary_slips = get_salary_slips(filters)
+	data    = []
+        columns = []
+        salary_slips = get_salary_slips(filters)
+	if not salary_slips:
+                return columns, data
+        
 	columns, earning_types, ded_types = get_columns(salary_slips)
 	ss_earning_map = get_ss_earning_map(salary_slips)
 	ss_ded_map = get_ss_ded_map(salary_slips)
 	
-	data = []
 	for ss in salary_slips:
                 status = ""
                 if ss.docstatus == 1:
@@ -33,7 +37,9 @@ def execute(filters=None):
                 else:
                         status = str(ss.docstatus)
                         
-		row = [ss.employee, ss.employee_name, ss.company, ss.branch, ss.department,
+		row = [ss.employee, ss.employee_name,
+			ss.bank_name, ss.bank_account_no, 
+			ss.company, ss.branch, ss.department,
                          ss.division, ss.section, ss.designation, 
 			 ss.fiscal_year, ss.month, ss.leave_withut_pay, ss.payment_days,
                          status]
@@ -54,31 +60,35 @@ def execute(filters=None):
 	
 def get_columns(salary_slips):
 	columns = [
-		_("Employee") + ":Link/Employee:80", _("Employee Name") + "::140", _("Company") + ":Link/Company:120",
+		_("Employee") + ":Link/Employee:80", _("Employee Name") + "::140",
+		_("Bank Name")+ "::80", _("Bank A/C#")+"::100", 
+		_("Company") + ":Link/Company:120",
                 _("Branch") + ":Link/Branch:120", _("Department") + ":Link/Department:120", _("Division") + ":Link/Division:120",
                 _("Section") + ":Link/Section:120", _("Designation") + ":Link/Designation:120",
 		_("Year") + "::80", _("Month") + "::80", _("Leave Without Pay") + ":Float:130", 
 		_("Payment Days") + ":Float:120", _("Status") + "::100"
 	]
-	
-	earning_types = frappe.db.sql_list("""select salary_component from `tabSalary Detail`
-		where amount != 0 and parent in (%s)
-		and parentfield = 'earnings'
-		group by salary_component
-		order by count(*) desc""" % 
-		(', '.join(['%s']*len(salary_slips))), tuple([d.name for d in salary_slips]))
+	earning_types = []
+	ded_types     = []
+
+        earning_types = frappe.db.sql_list("""select salary_component from `tabSalary Detail`
+                        where amount != 0 and parent in (%s)
+                        and parentfield = 'earnings'
+                        group by salary_component
+                        order by count(*) desc""" % 
+                        (', '.join(['%s']*len(salary_slips))), tuple([d.name for d in salary_slips]))
 		
-	ded_types = frappe.db.sql_list("""select salary_component from `tabSalary Detail`
-		where amount != 0 and parent in (%s)
-		and parentfield = 'deductions'
-		group by salary_component
-		order by count(*) desc""" % 
-		(', '.join(['%s']*len(salary_slips))), tuple([d.name for d in salary_slips]))
+        ded_types = frappe.db.sql_list("""select salary_component from `tabSalary Detail`
+                        where amount != 0 and parent in (%s)
+                        and parentfield = 'deductions'
+                        group by salary_component
+                        order by count(*) desc""" % 
+                        (', '.join(['%s']*len(salary_slips))), tuple([d.name for d in salary_slips]))
 		
-	columns = columns + [(e + ":Currency:120") for e in earning_types] + \
-		["Arrear Amount:Currency:120", "Leave Encashment Amount:Currency:150", 
-		"Gross Pay:Currency:120"] + [(d + ":Currency:120") for d in ded_types] + \
-		["Total Deduction:Currency:120", "Net Pay:Currency:120"]
+        columns = columns + [(e + ":Currency:120") for e in earning_types] + \
+                        ["Arrear Amount:Currency:120", "Leave Encashment Amount:Currency:150", 
+                        "Gross Pay:Currency:120"] + [(d + ":Currency:120") for d in ded_types] + \
+                        ["Total Deduction:Currency:120", "Net Pay:Currency:120"]
 
 	return columns, earning_types, ded_types
 	
@@ -86,10 +96,12 @@ def get_salary_slips(filters):
 	conditions, filters = get_conditions(filters)
 	salary_slips = frappe.db.sql("""select * from `tabSalary Slip` where 1 = 1 %s
 		order by employee, month""" % conditions, filters, as_dict=1)
-	
+
+	'''
 	if not salary_slips:
 		msgprint(_("No salary slip found for month: ") + cstr(filters.get("month")) + 
 			_(" and year: ") + cstr(filters.get("fiscal_year")), raise_exception=1)
+        '''
 	
 	return salary_slips
 	
@@ -104,6 +116,7 @@ def get_conditions(filters):
 	if filters.get("fiscal_year"): conditions += " and fiscal_year = %(fiscal_year)s"
 	if filters.get("company"): conditions += " and company = %(company)s"
 	if filters.get("employee"): conditions += " and employee = %(employee)s"
+	if filters.get("division"): conditions += " and division = %(division)s"
 	
         if filters.get("process_status") == "All":
                 conditions += " and docstatus = docstatus"
@@ -118,17 +131,18 @@ def get_conditions(filters):
 	return conditions, filters
 	
 def get_ss_earning_map(salary_slips):
-	ss_earnings = frappe.db.sql("""select parent, salary_component, sum(ifnull(amount,0)) as amount 
-		from `tabSalary Detail` where parent in (%s)
-		and parentfield = 'earnings'
-		group by parent, salary_component
-		""" %
-		(', '.join(['%s']*len(salary_slips))), tuple([d.name for d in salary_slips]), as_dict=1)
-	
 	ss_earning_map = {}
-	for d in ss_earnings:
-		ss_earning_map.setdefault(d.parent, frappe._dict()).setdefault(d.salary_component, [])
-		ss_earning_map[d.parent][d.salary_component] = flt(d.amount)
+
+        ss_earnings = frappe.db.sql("""select parent, salary_component, sum(ifnull(amount,0)) as amount 
+                        from `tabSalary Detail` where parent in (%s)
+                        and parentfield = 'earnings'
+                        group by parent, salary_component
+                        """ %
+                        (', '.join(['%s']*len(salary_slips))), tuple([d.name for d in salary_slips]), as_dict=1)
+                
+        for d in ss_earnings:
+                ss_earning_map.setdefault(d.parent, frappe._dict()).setdefault(d.salary_component, [])
+                ss_earning_map[d.parent][d.salary_component] = flt(d.amount)
 	
 	return ss_earning_map
 
